@@ -1,0 +1,23 @@
+services:
+  web:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      env_file: .env.production
+    depends_on:
+      db:
+        condition: service_healthy
+  
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_PASSWORD=npg_RXAz2JslEcZ3
+      - POSTGRES_DB=neondb?sslmode=require&channel_binding=require
+    volumes:
+      - pgdata:/var/lib/postgresql/datadocker compose exec app sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+
+volumes:
+  pgdata:
