@@ -88,3 +88,4 @@ docker run -p 3000:3000 notes-api
 - [Next.js Documentation](https://nextjs.org/docs)
 - [Prisma Documentation](https://www.prisma.io/docs)
 - [Docker Documentation](https://docs.docker.com)
+![ confirmaiton that it builds](image.png)
