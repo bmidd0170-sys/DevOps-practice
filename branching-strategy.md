@@ -3,6 +3,17 @@
 ## Overview
 This project follows a modified Git Flow branching strategy designed for continuous development and delivery of the Notes API application. This strategy provides structure for feature development, bug fixes, and releases while maintaining code stability.
 
+## Quick Reference
+
+| Branch | Purpose |
+|--------|---------|
+| `main` | Production-ready code |
+| `develop` | Integration work |
+| `hotfix/*` | Emergency fixes |
+| `feature/*` | New features |
+| `release/*` | Release preparation |
+| `bugfix/*` | Development bug fixes |
+
 ## Team Branch Responsibilities
 
 ### Critical Branches for Team
