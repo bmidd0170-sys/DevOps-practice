@@ -1,36 +1,90 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Docker Lab - Notes API
+
+A full-stack Next.js application with Docker support for containerized development and deployment. This project includes a REST API for managing notes with Prisma as the ORM and PostgreSQL as the database.
+
+## Project Overview
+
+This is a [Next.js](https://nextjs.org) application featuring:
+- **API Routes** - RESTful endpoints for managing notes
+- **Prisma ORM** - Database access and migrations
+- **Docker Support** - Containerized development and production environments
+- **TypeScript** - Type-safe codebase
+- **Health Check** - Built-in health monitoring endpoint
 
 ## Getting Started
 
-First, run the development server:
+### Local Development
 
+1. Install dependencies:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Set up your environment variables by creating a `.env.local` file
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Run database migrations:
+```bash
+npx prisma migrate dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Start the development server:
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) to view the application.
+
+### Docker Development
+
+Build and run the application in Docker:
+
+```bash
+docker-compose up --build
+```
+
+The application will be available at [http://localhost:3000](http://localhost:3000).
+
+## API Endpoints
+
+- `GET /api/health` - Health check endpoint
+- `GET /api/notes` - Retrieve all notes
+- `POST /api/notes` - Create a new note
+- `GET /api/notes/[id]` - Retrieve a specific note
+- `PUT /api/notes/[id]` - Update a note
+- `DELETE /api/notes/[id]` - Delete a note
+
+## Database
+
+This project uses [Prisma](https://www.prisma.io/) as the ORM with PostgreSQL.
+
+### Running Migrations
+
+```bash
+npx prisma migrate dev
+```
+
+### Viewing Database
+
+```bash
+npx prisma studio
+```
+
+## Building for Production
+
+```bash
+npm run build
+npm start
+```
+
+Or use Docker:
+
+```bash
+docker build -t notes-api .
+docker run -p 3000:3000 notes-api
+```
 
 ## Learn More
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Prisma Documentation](https://www.prisma.io/docs)
+- [Docker Documentation](https://docs.docker.com)
