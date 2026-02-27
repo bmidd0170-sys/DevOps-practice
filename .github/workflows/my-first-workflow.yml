@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-    # Install dependencies, run database migrations, and build the project
+      # Install dependencies, run database migrations, and build the project
       - run: npm ci
       - run: npx prisma migrate deploy
       - run: npm run build
