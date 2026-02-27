@@ -23,9 +23,6 @@ jobs:
         ports:
           - 5432:5432
     
-    # Set environment variables from GitHub Secrets or use local service for testing
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
     steps:
       - uses: actions/checkout@v4
