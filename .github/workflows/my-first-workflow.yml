@@ -39,6 +39,7 @@ jobs:
       
       # Install dependencies, run database migrations, and build the project
       - run: npm i
+      - run: npx prisma generate
       - run: npx prisma migrate deploy
       - run: npm run build
 
