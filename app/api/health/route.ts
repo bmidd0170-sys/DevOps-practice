@@ -1,9 +1,21 @@
 import { Pool } from 'pg';
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-});
+
+let pool: Pool | null = null;
+
+if (process.env.DATABASE_URL) {
+    pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+    });
+}
 
 export async function GET() {
+    if (!pool) {
+        return Response.json({
+            status: 'unhealthy',
+            error: 'Database not configured'
+        }, { status: 500 });
+    }
+
     try {
         const result = await pool.query('SELECT NOW()');
         return Response.json({
