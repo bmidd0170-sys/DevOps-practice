@@ -12,9 +12,24 @@ jobs:
     runs-on: ubuntu-latest
     environment: .env.production
     
-    # Set environment variables from GitHub Secrets
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    # Set environment variables from GitHub Secrets or use local service for testing
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
 
     steps:
       - uses: actions/checkout@v4
