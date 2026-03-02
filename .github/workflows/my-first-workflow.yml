@@ -10,26 +10,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_USER_FILE: /secrets/db-username.txt
-          POSTGRES_PASSWORD_FILE: /secrets/db-password.txt
-          POSTGRES_DB_FILE: /secrets/db-name.txt
-        volumes:
-          - ${{ github.workspace }}/secrets:/run/secrets:ro
-        options: >-
-          --health-cmd "pg_isready -U $$(cat /run/secrets/db-username.txt)"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-    
-    env:
-      DATABASE_URL_FILE: ${{ github.workspace }}/secrets/db-url.txt
 
     steps:
       - uses: actions/checkout@v4
@@ -38,6 +18,48 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      - name: Create secret files
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/secrets"
+          printf '%s' '${{ secrets.DB_USERNAME }}' > "$GITHUB_WORKSPACE/secrets/db-username.txt"
+          printf '%s' '${{ secrets.DB_PASSWORD }}' > "$GITHUB_WORKSPACE/secrets/db-password.txt"
+          printf '%s' '${{ secrets.DB_NAME }}' > "$GITHUB_WORKSPACE/secrets/db-name.txt"
+          printf 'postgresql://%s:%s@localhost:5432/%s' '${{ secrets.DB_USERNAME }}' '${{ secrets.DB_PASSWORD }}' '${{ secrets.DB_NAME }}' > "$GITHUB_WORKSPACE/secrets/db-url.txt"
+          echo "DATABASE_URL_FILE=$GITHUB_WORKSPACE/secrets/db-url.txt" >> "$GITHUB_ENV"
+
+      - name: Start postgres container
+        run: |
+          docker run -d --name ci-postgres \
+            -p 5432:5432 \
+            -e POSTGRES_USER_FILE=/run/secrets/db-username.txt \
+            -e POSTGRES_PASSWORD_FILE=/run/secrets/db-password.txt \
+            -e POSTGRES_DB_FILE=/run/secrets/db-name.txt \
+            -v "$GITHUB_WORKSPACE/secrets:/run/secrets:ro" \
+            --health-cmd='pg_isready -U "$$(cat /run/secrets/db-username.txt)" -d "$$(cat /run/secrets/db-name.txt)"' \
+            --health-interval=10s \
+            --health-timeout=5s \
+            --health-retries=5 \
+            postgres:15-alpine
+
+      - name: Wait for postgres to be healthy
+        run: |
+          for i in {1..30}; do
+            status=$(docker inspect --format='{{.State.Health.Status}}' ci-postgres)
+            if [ "$status" = "healthy" ]; then
+              echo "Postgres is healthy ✓"
+              exit 0
+            fi
+            if [ "$status" = "unhealthy" ]; then
+              echo "Postgres became unhealthy"
+              docker logs ci-postgres
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "Timed out waiting for Postgres health check"
+          docker logs ci-postgres
+          exit 1
       
       # Install dependencies, run database migrations, and build the project
       - run: npm i
@@ -47,7 +69,7 @@ jobs:
 
       # Check database health before proceeding with the merge
       - name: Check Database Health
-        run: 
+        run: |
           echo "Checking database connection..."
           npx prisma db execute --stdin <<< "SELECT 1 as health_check;" || exit 1
           echo "Database is healthy ✓"
@@ -62,3 +84,7 @@ jobs:
           git checkout main
           git merge develop --no-edit
           git push origin main
+
+      - name: Cleanup postgres container
+        if: always()
+        run: docker rm -f ci-postgres || true
