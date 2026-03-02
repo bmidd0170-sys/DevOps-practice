@@ -1,10 +1,12 @@
 import { Pool } from 'pg';
+import { getDatabaseUrl } from '@/lib/env';
 
 let pool: Pool | null = null;
+const databaseUrl = getDatabaseUrl();
 
-if (process.env.DATABASE_URL) {
+if (databaseUrl) {
     pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
+        connectionString: databaseUrl,
     });
 }
 
