@@ -10,7 +10,7 @@ function readDatabaseUrl() {
     return directValue;
   }
 
-  const filePath = process.env["DATABASE_URL_FILE"]?.trim();
+  const filePath = process.env["DATABASE_URL"]?.trim();
   if (!filePath) {
     return undefined;
   }
