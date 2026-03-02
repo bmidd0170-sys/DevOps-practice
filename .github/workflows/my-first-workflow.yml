@@ -15,9 +15,9 @@ jobs:
       postgres:
         image: postgres:15-alpine
         env:
-          POSTGRES_USER_FILE: /run/secrets/db-username.txt
-          POSTGRES_PASSWORD_FILE: /run/secrets/db-password.txt
-          POSTGRES_DB_FILE: /run/secrets/db-name.txt
+          POSTGRES_USER_FILE: /secrets/db-username.txt
+          POSTGRES_PASSWORD_FILE: /secrets/db-password.txt
+          POSTGRES_DB_FILE: /secrets/db-name.txt
         volumes:
           - ${{ github.workspace }}/secrets:/run/secrets:ro
         options: >-
