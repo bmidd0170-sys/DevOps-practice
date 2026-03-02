@@ -11,6 +11,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     
+    permissions:
+      contents: write
+    
     services:
       postgres:
         image: postgres:15-alpine
@@ -31,6 +34,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-node@v4
         with:
