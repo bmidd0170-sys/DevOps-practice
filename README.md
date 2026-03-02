@@ -42,6 +42,14 @@ Build and run the application in Docker:
 docker-compose up --build
 ```
 
+Database values are loaded from files in `secrets/`:
+- `secrets/db-url.txt`
+- `secrets/db-username.txt`
+- `secrets/db-password.txt`
+- `secrets/db-name.txt`
+
+These files are ignored by git.
+
 The application will be available at [http://localhost:3000](http://localhost:3000).
 
 ## API Endpoints
