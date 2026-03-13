@@ -57,12 +57,12 @@ jobs:
           echo "Database is healthy ✓"
 
       # Merge develop to main if the current branch is develop and all previous steps succeeded
-      - name: Merge develop to main
-        if: github.ref == 'refs/heads/develop' && success()
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git checkout main
-          git merge develop --no-edit --allow-unrelated-histories --strategy-option theirs
-          git push origin main
+#      - name: Merge develop to main
+#        if: github.ref == 'refs/heads/develop' && success()
+#        run: |
+#          git config --global user.name "github-actions[bot]"
+#          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+#          git fetch origin main
+#          git checkout main
+#          git merge develop --no-edit --allow-unrelated-histories --strategy-option theirs
+#          git push origin main
