@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card } from "@/components/ui/card"
 import {
   X,
   Send,
@@ -21,21 +20,12 @@ interface Message {
   id: string
   role: "user" | "assistant"
   content: string
-  citations?: Citation[]
-}
-
-interface Citation {
-  id: string
-  text: string
-  preview: string
 }
 
 interface AIBuddyPanelProps {
   isOpen: boolean
   onClose: () => void
   noteContent: string
-  onHighlight: (text: string) => string | null
-  onScrollToSection: (sectionId: string) => void
 }
 
 const suggestedPrompts = [
@@ -45,54 +35,10 @@ const suggestedPrompts = [
   { icon: BookOpen, label: "Key ideas", prompt: "What are the key ideas I should remember?" },
 ]
 
-const sampleResponses: Record<string, { content: string; citations: Citation[] }> = {
-  "summarize": {
-    content: "This note covers the fundamentals of Machine Learning, a subset of AI focused on building data-driven systems. The key topics include:\n\n**Three Types of ML:**\n1. Supervised Learning - uses labeled data\n2. Unsupervised Learning - finds patterns in unlabeled data\n3. Reinforcement Learning - learns through rewards/penalties\n\n**Important Concepts:**\n- Training vs Testing data splits\n- Overfitting and Underfitting challenges\n- Feature Engineering importance\n\nThe note concludes with popular algorithms like Linear Regression, Decision Trees, and Neural Networks.",
-    citations: [
-      {
-        id: "cite-1",
-        text: "Supervised Learning",
-        preview: "In supervised learning, the algorithm learns from labeled training data..."
-      },
-      {
-        id: "cite-2",
-        text: "Overfitting",
-        preview: "Overfitting occurs when a model learns the training data too well..."
-      }
-    ]
-  },
-  "explain": {
-    content: "Let me break down the main concepts in simpler terms:\n\n**Machine Learning** is like teaching a computer to recognize patterns, similar to how you learn to recognize faces - you see many examples and eventually figure out what makes each face unique.\n\n**Supervised Learning** is like having a teacher. You show the computer examples with answers (like flash cards with questions and answers).\n\n**Unsupervised Learning** is like giving a child a box of toys without instructions - they'll naturally group similar toys together.\n\n**Reinforcement Learning** is like training a pet - good behavior gets treats, bad behavior doesn't.",
-    citations: [
-      {
-        id: "cite-3",
-        text: "Types of Machine Learning",
-        preview: "Machine learning can be categorized into three main types..."
-      }
-    ]
-  },
-  "quiz": {
-    content: "Here are 5 quiz questions based on your notes:\n\n**Question 1:** What is the main difference between supervised and unsupervised learning?\n\n**Question 2:** What happens when a model is \"overfitted\"?\n\n**Question 3:** Name three popular machine learning algorithms mentioned in the notes.\n\n**Question 4:** What is feature engineering and why is it important?\n\n**Question 5:** In reinforcement learning, how does an agent learn to make decisions?",
-    citations: []
-  },
-  "key": {
-    content: "The key ideas you should remember are:\n\n1. **ML learns from data** - Unlike traditional programming, ML systems improve through experience\n\n2. **Three learning paradigms** - Supervised (labeled data), Unsupervised (patterns), Reinforcement (rewards)\n\n3. **Data splitting is crucial** - Always separate training and testing data\n\n4. **Balance is key** - Avoid both overfitting (too complex) and underfitting (too simple)\n\n5. **Features matter** - Good feature engineering can make or break a model",
-    citations: [
-      {
-        id: "cite-4",
-        text: "Key Concepts",
-        preview: "The data is typically split into training and testing sets..."
-      }
-    ]
-  }
-}
-
 export function AIBuddyPanel({
   isOpen,
   onClose,
   noteContent,
-  onHighlight,
-  onScrollToSection,
 }: AIBuddyPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
@@ -117,41 +63,42 @@ export function AIBuddyPanel({
     setInput("")
     setIsLoading(true)
 
-    // Simulate AI response
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+    try {
+      const response = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: messageText,
+          noteContent,
+        }),
+      })
 
-    let responseData = sampleResponses["key"]
-    const lowerPrompt = messageText.toLowerCase()
-    
-    if (lowerPrompt.includes("summarize") || lowerPrompt.includes("summary")) {
-      responseData = sampleResponses["summarize"]
-    } else if (lowerPrompt.includes("explain") || lowerPrompt.includes("simpler")) {
-      responseData = sampleResponses["explain"]
-    } else if (lowerPrompt.includes("quiz") || lowerPrompt.includes("question")) {
-      responseData = sampleResponses["quiz"]
-    }
+      const data = await response.json() as { answer?: string; error?: string }
 
-    // Create highlights for citations
-    const processedCitations = responseData.citations.map((citation) => {
-      const highlightId = onHighlight(citation.preview)
-      return { ...citation, highlightId }
-    })
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to get AI response")
+      }
 
-    const assistantMessage: Message = {
-      id: `assistant-${Date.now()}`,
-      role: "assistant",
-      content: responseData.content,
-      citations: processedCitations,
-    }
+      const assistantMessage: Message = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: data.answer || "I could not generate a response right now.",
+      }
 
-    setMessages((prev) => [...prev, assistantMessage])
-    setIsLoading(false)
-  }
-
-  const handleCitationClick = (citation: Citation) => {
-    const highlightId = onHighlight(citation.preview)
-    if (highlightId) {
-      onScrollToSection(highlightId)
+      setMessages((prev) => [...prev, assistantMessage])
+    } catch (error) {
+      const assistantMessage: Message = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: error instanceof Error
+          ? `Sorry, there was a problem: ${error.message}`
+          : "Sorry, there was a problem getting a response.",
+      }
+      setMessages((prev) => [...prev, assistantMessage])
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -228,38 +175,9 @@ export function AIBuddyPanel({
                       "text-sm whitespace-pre-wrap",
                       message.role === "assistant" && "text-foreground"
                     )}
-                    dangerouslySetInnerHTML={{
-                      __html: message.content
-                        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                        .replace(/\n/g, '<br />')
-                    }}
-                  />
-                  {message.citations && message.citations.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-border space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">
-                        Referenced sections:
-                      </p>
-                      {message.citations.map((citation) => (
-                        <Card
-                          key={citation.id}
-                          onClick={() => handleCitationClick(citation)}
-                          className="p-2 cursor-pointer hover:bg-accent/50 transition-colors"
-                        >
-                          <div className="flex items-start gap-2">
-                            <FileText className="w-3 h-3 text-primary mt-0.5 shrink-0" />
-                            <div>
-                              <p className="text-xs font-medium text-foreground">
-                                {citation.text}
-                              </p>
-                              <p className="text-xs text-muted-foreground line-clamp-1">
-                                {citation.preview}
-                              </p>
-                            </div>
-                          </div>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
+                  >
+                    {message.content}
+                  </div>
                 </div>
               </div>
             ))}

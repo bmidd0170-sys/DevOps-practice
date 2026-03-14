@@ -23,23 +23,23 @@ const recentQuestions = [
 
 export function DashboardContent() {
   return (
-    <div className="p-6 lg:p-8 space-y-8">
+    <div className="p-6 lg:p-8 space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
           <p className="text-muted-foreground mt-1">Welcome back! Here&apos;s your study overview.</p>
         </div>
         <div className="flex gap-3">
           <Button asChild>
-            <Link href="/dashboard">
-              <Plus className="w-4 h-4 mr-2" />
+            <Link href="/notes/new">
+              <Plus className="w-4 h-4" />
               Create Note
             </Link>
           </Button>
           <Button variant="secondary" asChild>
             <Link href="/dashboard">
-              <Mic className="w-4 h-4 mr-2" />
+              <Mic className="w-4 h-4" />
               Start Recording
             </Link>
           </Button>
@@ -75,7 +75,7 @@ export function DashboardContent() {
       </div>
 
       {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Recent Notes */}
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
@@ -87,16 +87,16 @@ export function DashboardContent() {
               <Link href="/dashboard">View all</Link>
             </Button>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3">
             {recentNotes.map((note) => (
               <Link
                 key={note.id}
                 href="/dashboard"
-                className="flex items-start justify-between p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                className="flex items-start justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
               >
-                <div className="flex gap-3">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10">
-                    <FileText className="w-5 h-5 text-primary" />
+                <div className="flex gap-2">
+                  <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary/10">
+                    <FileText className="w-4 h-4 text-primary" />
                   </div>
                   <div>
                     <h3 className="font-medium text-foreground">{note.title}</h3>
@@ -127,11 +127,11 @@ export function DashboardContent() {
             <CardTitle>Study Progress</CardTitle>
             <CardDescription>This week&apos;s activity</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-accent/10">
-                  <BookOpen className="w-5 h-5 text-accent" />
+                <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-accent/10">
+                  <BookOpen className="w-4 h-4 text-accent" />
                 </div>
                 <div>
                   <p className="font-medium text-foreground">Notes Reviewed</p>
@@ -145,8 +145,8 @@ export function DashboardContent() {
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10">
-                  <Calendar className="w-5 h-5 text-primary" />
+                <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary/10">
+                  <Calendar className="w-4 h-4 text-primary" />
                 </div>
                 <div>
                   <p className="font-medium text-foreground">Flashcards</p>
@@ -163,7 +163,7 @@ export function DashboardContent() {
       </div>
 
       {/* Bottom Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Recent Recordings */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -175,16 +175,16 @@ export function DashboardContent() {
               <Link href="/dashboard">View all</Link>
             </Button>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-2">
             {recentRecordings.map((recording) => (
               <Link
                 key={recording.id}
                 href="/dashboard"
-                className="flex items-center justify-between p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-destructive/10">
-                    <Mic className="w-5 h-5 text-destructive" />
+                  <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-destructive/10">
+                    <Mic className="w-4 h-4 text-destructive" />
                   </div>
                   <div>
                     <h3 className="font-medium text-foreground">{recording.title}</h3>
@@ -208,13 +208,13 @@ export function DashboardContent() {
               <Link href="/dashboard">View all</Link>
             </Button>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-2">
             {recentQuestions.map((q) => (
               <div
                 key={q.id}
-                className="p-4 rounded-lg bg-muted/50"
+                className="p-3 rounded-lg bg-muted/50"
               >
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-2">
                   <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 shrink-0">
                     <MessageSquare className="w-4 h-4 text-primary" />
                   </div>
@@ -241,14 +241,14 @@ interface StatsCardProps {
 
 function StatsCard({ icon: Icon, label, value, description }: StatsCardProps) {
   return (
-    <Card>
-      <CardContent className="pt-6">
+    <Card className="py-4">
+      <CardContent className="px-4">
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10">
-            <Icon className="w-5 h-5 text-primary" />
+          <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary/10">
+            <Icon className="w-4 h-4 text-primary" />
           </div>
           <div>
-            <p className="text-sm text-muted-foreground">{label}</p>
+            <p className="text-xs text-muted-foreground">{label}</p>
             <p className="text-2xl font-bold text-foreground">{value}</p>
             <p className="text-xs text-muted-foreground">{description}</p>
           </div>

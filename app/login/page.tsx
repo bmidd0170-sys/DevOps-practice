@@ -10,18 +10,48 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Brain, Eye, EyeOff, ArrowRight, Sparkles, BookOpen, Mic } from "lucide-react"
+import { useNotifications } from "@/components/notifications/notification-context"
 
 export default function LoginPage() {
   const router = useRouter()
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [isSignUp, setIsSignUp] = useState(false)
+  const [firstName, setFirstName] = useState("")
+  const [lastName, setLastName] = useState("")
+  const [email, setEmail] = useState("")
+  const { sendNotification } = useNotifications()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
+
+    const fullName = isSignUp
+      ? `${firstName.trim()} ${lastName.trim()}`.trim()
+      : (JSON.parse(localStorage.getItem("noteai.profile.v1") || "{}") as { name?: string }).name ?? email
+
+    // Save (or update) the profile so all notifications use the real email
+    localStorage.setItem(
+      "noteai.profile.v1",
+      JSON.stringify({ name: fullName || email, email: email.trim() })
+    )
+
     // Simulate auth
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+
+    if (isSignUp) {
+      // Send a welcome notification in-app + email
+      await sendNotification({
+        email: email.trim(),
+        recipientName: fullName || email,
+        subject: "Welcome to NoteAI!",
+        title: "Welcome to NoteAI!",
+        message:
+          "Your account is ready. Start by creating a note, recording a lecture, or asking the AI anything about your study material.",
+        type: "success",
+      })
+    }
+
     setIsLoading(false)
     router.push("/getting-started")
   }
@@ -103,18 +133,22 @@ export default function LoginPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="firstName">First name</Label>
-                      <Input 
-                        id="firstName" 
+                      <Input
+                        id="firstName"
                         placeholder="John"
                         required={isSignUp}
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="lastName">Last name</Label>
-                      <Input 
-                        id="lastName" 
+                      <Input
+                        id="lastName"
                         placeholder="Doe"
                         required={isSignUp}
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
                       />
                     </div>
                   </div>
@@ -122,11 +156,13 @@ export default function LoginPage() {
                 
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input 
-                    id="email" 
-                    type="email" 
+                  <Input
+                    id="email"
+                    type="email"
                     placeholder="john@example.com"
                     required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                   />
                 </div>
 

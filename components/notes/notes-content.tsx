@@ -1,77 +1,87 @@
 "use client"
 
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { NoteCard } from "@/components/notes/note-card"
-import { Plus, Search, LayoutGrid, List, Filter } from "lucide-react"
+import { Plus, Search, LayoutGrid, List } from "lucide-react"
 import Link from "next/link"
-import { useState } from "react"
 import { cn } from "@/lib/utils"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { formatDistanceToNow } from "date-fns"
+import { toast } from "sonner"
 
-const allNotes = [
-  {
-    id: "1",
-    title: "Introduction to Machine Learning",
-    excerpt: "Machine learning is a subset of artificial intelligence that focuses on building systems that learn from data...",
-    date: "2 hours ago",
-    tags: ["AI", "Computer Science"],
-  },
-  {
-    id: "2",
-    title: "Organic Chemistry - Alkenes",
-    excerpt: "Alkenes are unsaturated hydrocarbons containing at least one carbon-carbon double bond...",
-    date: "Yesterday",
-    tags: ["Chemistry"],
-  },
-  {
-    id: "3",
-    title: "World War II Overview",
-    excerpt: "The Second World War was a global conflict that lasted from 1939 to 1945, involving most of the world's nations...",
-    date: "2 days ago",
-    tags: ["History"],
-  },
-  {
-    id: "4",
-    title: "Calculus - Integration Techniques",
-    excerpt: "Integration is the reverse process of differentiation. There are several techniques for solving integrals...",
-    date: "3 days ago",
-    tags: ["Mathematics"],
-  },
-  {
-    id: "5",
-    title: "Psychology - Cognitive Development",
-    excerpt: "Piaget's theory of cognitive development describes how children construct a mental model of the world...",
-    date: "4 days ago",
-    tags: ["Psychology"],
-  },
-  {
-    id: "6",
-    title: "Economics - Supply and Demand",
-    excerpt: "The law of supply and demand describes how prices are determined in a market economy...",
-    date: "5 days ago",
-    tags: ["Economics"],
-  },
-]
+interface ApiNote {
+  id: number
+  title: string
+  content: string
+  createdAt: string
+  updatedAt: string
+}
 
-const allTags = ["All", "AI", "Computer Science", "Chemistry", "History", "Mathematics", "Psychology", "Economics"]
+interface DisplayNote {
+  id: number
+  title: string
+  content: string
+  excerpt: string
+  date: string
+  tags: string[]
+}
 
 export function NotesContent() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [searchQuery, setSearchQuery] = useState("")
-  const [selectedTag, setSelectedTag] = useState("All")
+  const [notes, setNotes] = useState<DisplayNote[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
-  const filteredNotes = allNotes.filter((note) => {
+  const loadNotes = useCallback(async () => {
+    setIsLoading(true)
+    setLoadError(null)
+    try {
+      const response = await fetch("/api/notes", { cache: "no-store" })
+      const payload = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to load notes")
+      }
+
+      const mapped: DisplayNote[] = (payload as ApiNote[]).map((note) => ({
+        id: note.id,
+        title: note.title,
+        content: note.content,
+        excerpt: note.content.length > 160 ? `${note.content.slice(0, 157)}...` : note.content,
+        date: formatDistanceToNow(new Date(note.updatedAt), { addSuffix: true }),
+        tags: [],
+      }))
+
+      setNotes(mapped)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load notes"
+      setLoadError(message)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadNotes()
+  }, [loadNotes])
+
+  const filteredNotes = useMemo(() => notes.filter((note) => {
     const matchesSearch = note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       note.excerpt.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesTag = selectedTag === "All" || note.tags.includes(selectedTag)
-    return matchesSearch && matchesTag
-  })
+    return matchesSearch
+  }), [notes, searchQuery])
+
+  const removeNote = useCallback((id: number) => {
+    setNotes((current) => current.filter((note) => note.id !== id))
+  }, [])
+
+  const addDuplicatedNote = useCallback((note: DisplayNote) => {
+    const nowDate = formatDistanceToNow(new Date(), { addSuffix: true })
+    setNotes((current) => [{ ...note, date: nowDate }, ...current])
+    toast.success("Note duplicated")
+  }, [])
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
@@ -83,7 +93,7 @@ export function NotesContent() {
         </div>
         <Button asChild>
           <Link href="/notes/new">
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="w-4 h-4" />
             Create Note
           </Link>
         </Button>
@@ -91,7 +101,7 @@ export function NotesContent() {
 
       {/* Filters */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-1 gap-3">
+        <div className="flex flex-1">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -101,24 +111,6 @@ export function NotesContent() {
               className="pl-9"
             />
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon">
-                <Filter className="w-4 h-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {allTags.map((tag) => (
-                <DropdownMenuItem
-                  key={tag}
-                  onClick={() => setSelectedTag(tag)}
-                  className={cn(selectedTag === tag && "bg-accent")}
-                >
-                  {tag}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
         <div className="flex gap-1 border border-border rounded-lg p-1">
           <Button
@@ -138,18 +130,15 @@ export function NotesContent() {
         </div>
       </div>
 
-      {/* Selected Tag */}
-      {selectedTag !== "All" && (
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Filtered by:</span>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setSelectedTag("All")}
-            className="h-7"
-          >
-            {selectedTag}
-            <span className="ml-1 text-muted-foreground">&times;</span>
+      {isLoading && (
+        <div className="text-sm text-muted-foreground">Loading notes...</div>
+      )}
+
+      {loadError && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+          <p className="text-sm text-destructive">{loadError}</p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={() => void loadNotes()}>
+            Retry
           </Button>
         </div>
       )}
@@ -163,12 +152,18 @@ export function NotesContent() {
         )}
       >
         {filteredNotes.map((note) => (
-          <NoteCard key={note.id} note={note} viewMode={viewMode} />
+          <NoteCard
+            key={note.id}
+            note={note}
+            viewMode={viewMode}
+            onDelete={removeNote}
+            onDuplicate={addDuplicatedNote}
+          />
         ))}
       </div>
 
       {/* Empty State */}
-      {filteredNotes.length === 0 && (
+      {!isLoading && !loadError && filteredNotes.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
             <Search className="w-8 h-8 text-muted-foreground" />

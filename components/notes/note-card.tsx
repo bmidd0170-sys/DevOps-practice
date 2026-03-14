@@ -3,7 +3,6 @@
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { FileText, Clock, MoreVertical, Edit, Trash2, Copy } from "lucide-react"
 import Link from "next/link"
-import { cn } from "@/lib/utils"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,10 +10,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
+import { useRouter } from "next/navigation"
 
 interface Note {
-  id: string
+  id: number
   title: string
+  content: string
   excerpt: string
   date: string
   tags: string[]
@@ -23,9 +25,11 @@ interface Note {
 interface NoteCardProps {
   note: Note
   viewMode: "grid" | "list"
+  onDelete: (id: number) => void
+  onDuplicate: (note: Note) => void
 }
 
-export function NoteCard({ note, viewMode }: NoteCardProps) {
+export function NoteCard({ note, viewMode, onDelete, onDuplicate }: NoteCardProps) {
   if (viewMode === "list") {
     return (
       <Link href={`/notes/${note.id}`}>
@@ -55,7 +59,7 @@ export function NoteCard({ note, viewMode }: NoteCardProps) {
                 <Clock className="w-3 h-3" />
                 <span className="text-sm whitespace-nowrap">{note.date}</span>
               </div>
-              <NoteActions noteId={note.id} />
+              <NoteActions note={note} onDelete={onDelete} onDuplicate={onDuplicate} />
             </div>
           </CardContent>
         </Card>
@@ -70,7 +74,7 @@ export function NoteCard({ note, viewMode }: NoteCardProps) {
           <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10">
             <FileText className="w-5 h-5 text-primary" />
           </div>
-          <NoteActions noteId={note.id} />
+          <NoteActions note={note} onDelete={onDelete} onDuplicate={onDuplicate} />
         </CardHeader>
         <CardContent className="space-y-3">
           <div>
@@ -104,24 +108,82 @@ export function NoteCard({ note, viewMode }: NoteCardProps) {
   )
 }
 
-function NoteActions({ noteId }: { noteId: string }) {
+function NoteActions({
+  note,
+  onDelete,
+  onDuplicate,
+}: {
+  note: Note
+  onDelete: (id: number) => void
+  onDuplicate: (note: Note) => void
+}) {
+  const router = useRouter()
+
+  const deleteNote = async (event: Event) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const confirmed = window.confirm(`Delete "${note.title}"? This cannot be undone.`)
+    if (!confirmed) return
+
+    const response = await fetch(`/api/notes/${note.id}`, { method: "DELETE" })
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null)
+      toast.error(payload?.error ?? "Failed to delete note")
+      return
+    }
+
+    onDelete(note.id)
+    toast.success("Note deleted")
+  }
+
+  const duplicateNote = async (event: Event) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const response = await fetch("/api/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: `${note.title} (Copy)`,
+        content: note.content,
+      }),
+    })
+
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) {
+      toast.error(payload?.error ?? "Failed to duplicate note")
+      return
+    }
+
+    onDuplicate({
+      id: payload.id,
+      title: payload.title,
+      content: payload.content,
+      excerpt: payload.content.length > 160 ? `${payload.content.slice(0, 157)}...` : payload.content,
+      date: "just now",
+      tags: [],
+    })
+    router.refresh()
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
-        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
           <MoreVertical className="w-4 h-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
+        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); router.push(`/notes/${note.id}`) }}>
           <Edit className="w-4 h-4 mr-2" />
           Edit
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
+        <DropdownMenuItem onSelect={(e) => void duplicateNote(e)}>
           <Copy className="w-4 h-4 mr-2" />
           Duplicate
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={(e) => e.stopPropagation()} className="text-destructive">
+        <DropdownMenuItem onSelect={(e) => void deleteNote(e)} className="text-destructive">
           <Trash2 className="w-4 h-4 mr-2" />
           Delete
         </DropdownMenuItem>

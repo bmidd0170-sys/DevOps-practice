@@ -92,40 +92,40 @@ export function QuestionsContent() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="pt-6">
+        <Card className="py-4">
+          <CardContent className="px-4">
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10">
-                <MessageSquare className="w-5 h-5 text-primary" />
+              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary/10">
+                <MessageSquare className="w-4 h-4 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Total Questions</p>
+                <p className="text-xs text-muted-foreground">Total Questions</p>
                 <p className="text-2xl font-bold text-foreground">{questionsHistory.length}</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-6">
+        <Card className="py-4">
+          <CardContent className="px-4">
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-accent/10">
-                <FileText className="w-5 h-5 text-accent" />
+              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-accent/10">
+                <FileText className="w-4 h-4 text-accent" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Notes Referenced</p>
+                <p className="text-xs text-muted-foreground">Notes Referenced</p>
                 <p className="text-2xl font-bold text-foreground">4</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-6">
+        <Card className="py-4">
+          <CardContent className="px-4">
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-secondary">
-                <Clock className="w-5 h-5 text-secondary-foreground" />
+              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-secondary">
+                <Clock className="w-4 h-4 text-secondary-foreground" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">This Week</p>
+                <p className="text-xs text-muted-foreground">This Week</p>
                 <p className="text-2xl font-bold text-foreground">12</p>
               </div>
             </div>

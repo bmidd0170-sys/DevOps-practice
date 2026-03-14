@@ -22,6 +22,13 @@ npm install
 
 2. Set up your environment variables by creating a `.env.local` file
 
+Required for AI features:
+- `OPENAI_API_KEY=...`
+
+Optional model overrides:
+- `OPENAI_CHAT_MODEL=gpt-4.1-mini`
+- `OPENAI_TRANSCRIBE_MODEL=gpt-4o-mini-transcribe`
+
 3. Run database migrations:
 ```bash
 npx prisma migrate dev
@@ -60,6 +67,8 @@ The application will be available at [http://localhost:3000](http://localhost:30
 - `GET /api/notes/[id]` - Retrieve a specific note
 - `PUT /api/notes/[id]` - Update a note
 - `DELETE /api/notes/[id]` - Delete a note
+- `POST /api/ai/chat` - AI Buddy chat for note help
+- `POST /api/ai/transcribe` - Audio transcription using OpenAI
 
 ## Database
 

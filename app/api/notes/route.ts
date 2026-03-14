@@ -41,11 +41,21 @@ export async function POST(request: Request) {
         );
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    const title = typeof body?.title === 'string' ? body.title.trim() : '';
+    const content = typeof body?.content === 'string' ? body.content.trim() : '';
+
+    if (!title || !content) {
+        return Response.json(
+            { error: 'Title and content are required' },
+            { status: 400 }
+        );
+    }
+
     const note = await prisma.note.create({
         data: {
-            title: body.title,
-            content: body.content,
+            title,
+            content,
         }
     });
     return Response.json(note, { status: 201 });

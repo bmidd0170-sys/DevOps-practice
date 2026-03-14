@@ -24,6 +24,8 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
+import { toast } from "sonner"
+import { useRouter } from "next/navigation"
 
 const sampleContent = `# Introduction to Machine Learning
 
@@ -76,13 +78,14 @@ Feature engineering involves using domain knowledge to select and transform vari
 Machine learning continues to evolve rapidly, with new techniques and applications emerging regularly. Understanding the fundamentals is crucial for anyone looking to work in this field.`
 
 export function NoteEditor({ noteId }: { noteId: string }) {
+  const router = useRouter()
   const alignmentCycle = ["left", "center", "right"] as const
   type TextAlignment = (typeof alignmentCycle)[number]
 
-  const [title, setTitle] = useState(noteId === "new" ? "" : "Introduction to Machine Learning")
+  const [title, setTitle] = useState("")
   const [fontSize, setFontSize] = useState<number | string>(16)
   const [isAIPanelOpen, setIsAIPanelOpen] = useState(true)
-  const [plainText, setPlainText] = useState(noteId === "new" ? "" : sampleContent)
+  const [plainText, setPlainText] = useState("")
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
   const [isBoldActive, setIsBoldActive] = useState(false)
@@ -90,6 +93,8 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   const [isHighlightActive, setIsHighlightActive] = useState(false)
   const [textAlignment, setTextAlignment] = useState<TextAlignment>("left")
   const [highlightMode, setHighlightMode] = useState(false)
+  const [isLoadingNote, setIsLoadingNote] = useState(noteId !== "new")
+  const [isSaving, setIsSaving] = useState(false)
   const editorRef = useRef<HTMLDivElement>(null)
   const historyRef = useRef<string[]>([])
   const redoStackRef = useRef<string[]>([])
@@ -191,15 +196,63 @@ export function NoteEditor({ noteId }: { noteId: string }) {
   }, [refreshFormattingState])
 
   useEffect(() => {
-    if (editorRef.current && noteId !== "new") {
-      editorRef.current.innerText = sampleContent
+    let cancelled = false
+
+    const loadNote = async () => {
+      if (noteId === "new") {
+        setIsLoadingNote(false)
+        setTitle("")
+        setPlainText("")
+        if (editorRef.current) {
+          editorRef.current.innerHTML = ""
+          historyRef.current = [editorRef.current.innerHTML]
+          redoStackRef.current = []
+        }
+        refreshUndoRedoState()
+        refreshFormattingState()
+        return
+      }
+
+      setIsLoadingNote(true)
+      try {
+        const response = await fetch(`/api/notes/${noteId}`, { cache: "no-store" })
+        const payload = await response.json().catch(() => null)
+
+        if (!response.ok) {
+          throw new Error(payload?.error ?? "Failed to load note")
+        }
+
+        if (cancelled) return
+
+        const loadedTitle = typeof payload?.title === "string" ? payload.title : ""
+        const loadedContent = typeof payload?.content === "string" ? payload.content : ""
+
+        setTitle(loadedTitle)
+        setPlainText(loadedContent)
+        if (editorRef.current) {
+          editorRef.current.innerText = loadedContent
+          historyRef.current = [editorRef.current.innerHTML]
+          redoStackRef.current = []
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : "Failed to load note"
+          toast.error(message)
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingNote(false)
+          refreshUndoRedoState()
+          refreshFormattingState()
+        }
+      }
     }
-    if (editorRef.current) {
-      historyRef.current = [editorRef.current.innerHTML]
-      redoStackRef.current = []
+
+    void loadNote()
+
+    return () => {
+      cancelled = true
     }
-    refreshUndoRedoState()
-    refreshFormattingState()
   }, [noteId, refreshFormattingState, refreshUndoRedoState])
 
   useEffect(() => {
@@ -441,6 +494,52 @@ export function NoteEditor({ noteId }: { noteId: string }) {
       ? AlignRight
       : AlignLeft
 
+  const handleSave = useCallback(async () => {
+    const content = (editorRef.current?.innerText ?? plainText).replace(/\u200B/g, "").trim()
+    const cleanTitle = title.trim()
+
+    if (!cleanTitle || !content) {
+      toast.error("Both title and note content are required")
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      const isCreate = noteId === "new"
+      const endpoint = isCreate ? "/api/notes" : `/api/notes/${noteId}`
+      const method = isCreate ? "POST" : "PUT"
+
+      const response = await fetch(endpoint, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: cleanTitle,
+          content,
+        }),
+      })
+
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to save note")
+      }
+
+      setTitle(payload.title)
+      setPlainText(payload.content)
+      toast.success("Note saved")
+
+      if (isCreate) {
+        router.replace(`/notes/${payload.id}`)
+      } else {
+        router.refresh()
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save note"
+      toast.error(message)
+    } finally {
+      setIsSaving(false)
+    }
+  }, [noteId, plainText, router, title])
+
   return (
     <div className="flex min-h-screen bg-background">
       <AppSidebar />
@@ -471,9 +570,9 @@ export function NoteEditor({ noteId }: { noteId: string }) {
               <Sparkles className="w-4 h-4 mr-2" />
               AI Buddy
             </Button>
-            <Button size="sm">
+            <Button size="sm" onClick={() => void handleSave()} disabled={isSaving || isLoadingNote}>
               <Save className="w-4 h-4 mr-2" />
-              Save
+              {isSaving ? "Saving..." : "Save"}
             </Button>
             <Button variant="ghost" size="icon">
               <MoreVertical className="w-4 h-4" />
@@ -594,13 +693,13 @@ export function NoteEditor({ noteId }: { noteId: string }) {
           <div className={cn("flex-1 overflow-auto", isAIPanelOpen && "lg:mr-96")}>
             <div className="max-w-3xl mx-auto p-6 lg:p-8 relative">
               {plainText === "" && (
-                <p className="absolute top-9 left-10 text-muted-foreground pointer-events-none select-none">
+                <p className="absolute top-9 left-10 text-base leading-7 text-muted-foreground pointer-events-none select-none">
                   Start writing your note…
                 </p>
               )}
               <div
                 ref={editorRef}
-                contentEditable
+                contentEditable={!isLoadingNote}
                 suppressContentEditableWarning
                 onInput={handleInput}
                 onBlur={handleEditorBlur}
@@ -613,9 +712,12 @@ export function NoteEditor({ noteId }: { noteId: string }) {
                     handleRedo()
                   }
                 }}
-                className="w-full min-h-[70vh] rounded-xl border border-border bg-card px-4 py-3 text-base leading-7 text-foreground outline-none focus:ring-2 focus:ring-ring [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1"
+                className="w-full min-h-[70vh] rounded-xl border border-border bg-card px-4 py-3 text-base leading-7 text-foreground outline-none focus:ring-2 focus:ring-ring [&_p]:m-0 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1"
                 spellCheck
               />
+              {isLoadingNote && (
+                <p className="mt-3 text-sm text-muted-foreground">Loading note...</p>
+              )}
             </div>
           </div>
 
@@ -624,8 +726,6 @@ export function NoteEditor({ noteId }: { noteId: string }) {
             isOpen={isAIPanelOpen}
             onClose={() => setIsAIPanelOpen(false)}
             noteContent={plainText}
-            onHighlight={handleHighlight}
-            onScrollToSection={scrollToSection}
           />
         </div>
       </div>

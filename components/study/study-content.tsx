@@ -55,14 +55,14 @@ export function StudyContent() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
+        <Card className="py-4">
+          <CardContent className="px-4">
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10">
-                <BookOpen className="w-5 h-5 text-primary" />
+              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary/10">
+                <BookOpen className="w-4 h-4 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Cards Reviewed</p>
+                <p className="text-xs text-muted-foreground">Cards Reviewed</p>
                 <p className="text-2xl font-bold text-foreground">
                   {studyStats.cardsReviewed}/{studyStats.totalCards}
                 </p>
@@ -70,40 +70,40 @@ export function StudyContent() {
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-6">
+        <Card className="py-4">
+          <CardContent className="px-4">
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-accent/10">
-                <Brain className="w-5 h-5 text-accent" />
+              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-accent/10">
+                <Brain className="w-4 h-4 text-accent" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Quizzes Taken</p>
+                <p className="text-xs text-muted-foreground">Quizzes Taken</p>
                 <p className="text-2xl font-bold text-foreground">{studyStats.quizzesTaken}</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-6">
+        <Card className="py-4">
+          <CardContent className="px-4">
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-chart-3/10">
-                <Target className="w-5 h-5 text-chart-3" />
+              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-chart-3/10">
+                <Target className="w-4 h-4 text-chart-3" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Average Score</p>
+                <p className="text-xs text-muted-foreground">Average Score</p>
                 <p className="text-2xl font-bold text-foreground">{studyStats.averageScore}%</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-6">
+        <Card className="py-4">
+          <CardContent className="px-4">
             <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-chart-1/10">
-                <Trophy className="w-5 h-5 text-chart-1" />
+              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-chart-1/10">
+                <Trophy className="w-4 h-4 text-chart-1" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Study Streak</p>
+                <p className="text-xs text-muted-foreground">Study Streak</p>
                 <p className="text-2xl font-bold text-foreground">{studyStats.streak} days</p>
               </div>
             </div>

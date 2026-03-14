@@ -18,7 +18,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 
 const navItems = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
+  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Notes", href: "/notes", icon: FileText },
   { name: "Recordings", href: "/recordings", icon: Mic },
   { name: "AI Questions", href: "/questions", icon: MessageSquare },

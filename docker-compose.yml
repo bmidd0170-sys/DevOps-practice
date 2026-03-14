@@ -2,9 +2,15 @@ services:
   web:
     build: .
     ports:
-      - "3000:3000"
+      - "80:3000"
     environment:
       - DATABASE_URL_FILE=/run/secrets/db-url.txt
+      # SMTP email — all sensitive values read from secrets/
+      - SMTP_HOST_FILE=/run/secrets/smtp-host.txt
+      - SMTP_PORT=587
+      - SMTP_USER_FILE=/run/secrets/smtp-email.txt
+      - SMTP_FROM=NoteAI <bmidd0170@launchpadphilly.org>
+      - SMTP_PASS_FILE=/run/secrets/smtp-password.txt
     volumes:
       - ./secrets:/run/secrets:ro
     depends_on:
