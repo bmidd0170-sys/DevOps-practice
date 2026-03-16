@@ -90,7 +90,7 @@ jobs:
     name: Provision EC2 Instance
     runs-on: ubuntu-latest
     needs: docker
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && github.event_name != 'pull_request'
 
     outputs:
       instance_id: ${{ steps.ec2.outputs.instance_id }}
@@ -192,7 +192,7 @@ jobs:
     name: Deploy to EC2
     runs-on: ubuntu-latest
     needs: [docker, provision-ec2]
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && github.event_name != 'pull_request'
 
     permissions:
       contents: read
@@ -276,7 +276,10 @@ jobs:
             fi
 
             cd "$PROJECT_PATH"
-            git pull --ff-only origin main
+            DEPLOY_BRANCH="${{ github.ref_name }}"
+            git fetch origin "$DEPLOY_BRANCH"
+            git checkout "$DEPLOY_BRANCH"
+            git pull --ff-only origin "$DEPLOY_BRANCH"
 
             mkdir -p secrets
             cat > secrets/db-url.txt <<EOF
@@ -317,7 +320,7 @@ jobs:
     name: Terminate EC2 After 10 Minutes
     runs-on: ubuntu-latest
     needs: [provision-ec2, deploy-ec2]
-    if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.provision-ec2.result == 'success'
+    if: always() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && github.event_name != 'pull_request' && needs.provision-ec2.result == 'success'
 
     permissions:
       contents: read
