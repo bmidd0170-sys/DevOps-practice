@@ -75,10 +75,12 @@ export function AIBuddyPanel({
         }),
       })
 
-      const data = await response.json() as { answer?: string; error?: string }
+      const data = await response.json() as { answer?: string; error?: string; details?: string }
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to get AI response")
+        const details = data.details?.trim()
+        const base = data.error || `Request failed (${response.status})`
+        throw new Error(details ? `${base}: ${details}` : base)
       }
 
       const assistantMessage: Message = {

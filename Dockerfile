@@ -40,11 +40,11 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/package*.json ./
 
 # Install only production dependencies and Prisma CLI
-RUN npm ci --only=production && \
-    npm install prisma --save-dev && \
+RUN npm ci --omit=dev && \
     npx prisma generate
 
 # Change ownership to nextjs user

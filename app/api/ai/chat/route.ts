@@ -13,7 +13,7 @@ interface ChatRequestBody {
 export async function POST(request: Request) {
     if (!openai) {
         return Response.json(
-            { error: 'OPENAI_API_KEY is not configured' },
+            { error: 'OPENAI_API_KEY is not configured. Set OPENAI_API_KEY or OPENAI_API_KEY_FILE.' },
             { status: 500 }
         );
     }
@@ -60,12 +60,22 @@ export async function POST(request: Request) {
             model,
         });
     } catch (error) {
+        const status =
+            typeof error === 'object' &&
+            error !== null &&
+            'status' in error &&
+            typeof (error as { status?: unknown }).status === 'number'
+                ? (error as { status: number }).status
+                : 500;
+
+        const message = error instanceof Error ? error.message : String(error);
+
         return Response.json(
             {
                 error: 'Failed to generate AI response',
-                details: error instanceof Error ? error.message : String(error),
+                details: message,
             },
-            { status: 500 }
+            { status }
         );
     }
 }

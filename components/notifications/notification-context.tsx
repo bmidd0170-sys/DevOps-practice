@@ -32,11 +32,38 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<AppNotification[]>([])
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORE_KEY)
-      if (raw) setNotifications(JSON.parse(raw) as AppNotification[])
-    } catch {
-      // ignore corrupt storage
+    let mounted = true
+
+    const loadNotifications = async () => {
+      try {
+        const response = await fetch("/api/notifications", { cache: "no-store" })
+        if (!response.ok) {
+          throw new Error("Failed to load notifications")
+        }
+
+        const remote = (await response.json()) as AppNotification[]
+        if (mounted && Array.isArray(remote) && remote.length > 0) {
+          const trimmed = remote.slice(0, 50)
+          setNotifications(trimmed)
+          localStorage.setItem(STORE_KEY, JSON.stringify(trimmed))
+          return
+        }
+      } catch {
+        // Fall through to local storage.
+      }
+
+      try {
+        const raw = localStorage.getItem(STORE_KEY)
+        if (raw && mounted) setNotifications(JSON.parse(raw) as AppNotification[])
+      } catch {
+        // ignore corrupt storage
+      }
+    }
+
+    loadNotifications()
+
+    return () => {
+      mounted = false
     }
   }, [])
 
@@ -77,19 +104,54 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const sendNotification = useCallback(
     async (payload: NotificationPayload & { type?: AppNotification["type"] }) => {
       const { type = "info", ...rest } = payload
+      const tempId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`
 
       // Always add an in-app notification immediately
-      addNotification({ title: rest.title, message: rest.message, type })
+      setNotifications((prev) => {
+        const next: AppNotification = {
+          id: tempId,
+          title: rest.title,
+          message: rest.message,
+          type,
+          read: false,
+          createdAt: new Date().toISOString(),
+        }
+        return persist([next, ...prev])
+      })
 
-      // Fire-and-forget email (don't block the UI)
       try {
-        await fetch("/api/notifications", {
+        const response = await fetch("/api/notifications", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(rest),
+          body: JSON.stringify({ ...rest, type }),
         })
+
+        if (!response.ok) {
+          throw new Error("Failed to send notification")
+        }
+
+        const data = (await response.json()) as { notification?: AppNotification | null }
+        if (data.notification) {
+          setNotifications((prev) => {
+            const withoutTemp = prev.filter((n) => n.id !== tempId)
+            const exists = withoutTemp.some((n) => n.id === data.notification!.id)
+            return exists ? persist(withoutTemp) : persist([data.notification!, ...withoutTemp])
+          })
+        } else {
+          setNotifications((prev) => persist(prev.filter((n) => n.id !== tempId)))
+          addNotification({ title: rest.title, message: rest.message, type })
+        }
       } catch {
-        // Email failure is non-critical — in-app notification already shown
+        // Keep local notification even when API/email fails.
+        setNotifications((prev) =>
+          persist(
+            prev.map((n) =>
+              n.id === tempId
+                ? { ...n, id: `${Date.now()}-${Math.random().toString(36).slice(2)}` }
+                : n
+            )
+          )
+        )
       }
     },
     [addNotification]

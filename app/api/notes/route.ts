@@ -27,10 +27,18 @@ export async function GET() {
         );
     }
 
-    const notes = await prisma.note.findMany({
-        orderBy: { createdAt: 'desc' }
-    });
-    return Response.json(notes);
+    try {
+        const notes = await prisma.note.findMany({
+            orderBy: { createdAt: 'desc' }
+        });
+        return Response.json(notes);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return Response.json(
+            { error: 'Database unavailable', details: message },
+            { status: 503 }
+        );
+    }
 }
 
 export async function POST(request: Request) {
@@ -52,11 +60,19 @@ export async function POST(request: Request) {
         );
     }
 
-    const note = await prisma.note.create({
-        data: {
-            title,
-            content,
-        }
-    });
-    return Response.json(note, { status: 201 });
+    try {
+        const note = await prisma.note.create({
+            data: {
+                title,
+                content,
+            }
+        });
+        return Response.json(note, { status: 201 });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return Response.json(
+            { error: 'Database unavailable', details: message },
+            { status: 503 }
+        );
+    }
 }

@@ -22,12 +22,22 @@ npm install
 
 2. Set up your environment variables by creating a `.env.local` file
 
+Required for core app:
+- `DATABASE_URL=postgresql://...`
+
 Required for AI features:
 - `OPENAI_API_KEY=...`
 
 Optional model overrides:
 - `OPENAI_CHAT_MODEL=gpt-4.1-mini`
 - `OPENAI_TRANSCRIBE_MODEL=gpt-4o-mini-transcribe`
+
+Required for email notifications:
+- `SMTP_HOST=smtp.gmail.com`
+- `SMTP_PORT=587`
+- `SMTP_USER=you@example.com`
+- `SMTP_PASS=your-app-password`
+- `SMTP_FROM=NoteAI <you@example.com>`
 
 3. Run database migrations:
 ```bash
@@ -55,6 +65,9 @@ Database values are loaded from files in `secrets/`:
 - `secrets/db-password.txt`
 - `secrets/db-name.txt`
 
+AI values for Docker are also loaded from files in `secrets/`:
+- `secrets/openai-api-key.txt`
+
 These files are ignored by git.
 
 The application will be available at [http://localhost:3000](http://localhost:3000).
@@ -62,6 +75,7 @@ The application will be available at [http://localhost:3000](http://localhost:30
 ## API Endpoints
 
 - `GET /api/health` - Health check endpoint
+- `GET /api/notifications` - Retrieve recent notifications
 - `GET /api/notes` - Retrieve all notes
 - `POST /api/notes` - Create a new note
 - `GET /api/notes/[id]` - Retrieve a specific note
@@ -69,6 +83,8 @@ The application will be available at [http://localhost:3000](http://localhost:30
 - `DELETE /api/notes/[id]` - Delete a note
 - `POST /api/ai/chat` - AI Buddy chat for note help
 - `POST /api/ai/transcribe` - Audio transcription using OpenAI
+
+`GET /api/health` also returns non-secret service config status (`databaseConfigured`, `aiConfigured`, `smtpConfigured`) to help verify environment wiring.
 
 ## Database
 

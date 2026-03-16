@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import nodemailer from "nodemailer"
+import { PrismaClient } from "@prisma/client"
+import { PrismaPg } from "@prisma/adapter-pg"
 import {
+  getDatabaseUrl,
   getSmtpHost,
   getSmtpPort,
   getSmtpUser,
@@ -15,6 +18,64 @@ export interface NotificationPayload {
   subject: string
   title: string
   message: string
+  type?: "info" | "success" | "warning" | "error"
+}
+
+const globalForPrisma = global as unknown as { prisma?: PrismaClient }
+
+let prisma: PrismaClient | null = null
+const databaseUrl = getDatabaseUrl()
+
+if (databaseUrl) {
+  prisma = globalForPrisma.prisma || new PrismaClient({
+    adapter: new PrismaPg({
+      connectionString: databaseUrl,
+    }),
+  })
+
+  if (process.env.NODE_ENV !== "production") {
+    globalForPrisma.prisma = prisma
+  }
+}
+
+function getNotificationDelegate() {
+  const delegate = (prisma as PrismaClient & {
+    notification?: {
+      create: (args: {
+        data: {
+          email: string
+          recipientName?: string
+          subject: string
+          title: string
+          message: string
+          type: string
+          emailSent: boolean
+        }
+      }) => Promise<{
+        id: number
+        title: string
+        message: string
+        type: string
+        createdAt: Date
+        emailSent: boolean
+      }>
+      findMany: (args: {
+        orderBy: { createdAt: "desc" }
+        take: number
+      }) => Promise<
+        Array<{
+          id: number
+          title: string
+          message: string
+          type: string
+          createdAt: Date
+          emailSent: boolean
+        }>
+      >
+    }
+  } | null)?.notification
+
+  return delegate ?? null
 }
 
 function buildTransporter() {
@@ -81,7 +142,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { email, recipientName, subject, title, message } = body
+  const { email, recipientName, subject, title, message, type = "info" } = body
 
   if (!email || !subject || !title || !message) {
     return NextResponse.json(
@@ -97,35 +158,114 @@ export async function POST(req: NextRequest) {
   }
 
   const transporter = buildTransporter()
+  let emailSent = false
+  let reason: string | undefined
 
   if (!transporter) {
     console.warn(
       "[notifications] SMTP not configured — skipping email. Set SMTP_HOST, SMTP_USER, and SMTP_PASS to enable."
     )
-    return NextResponse.json({
-      success: true,
-      emailSent: false,
-      reason: "SMTP not configured",
-    })
+    reason = "SMTP not configured"
+  }
+
+  if (transporter) {
+    try {
+      await transporter.sendMail({
+        from: getSmtpFrom(),
+        to: email,
+        subject,
+        text: `Hi ${recipientName || "there"},\n\n${title}\n\n${message}\n\n—NoteAI`,
+        html: buildHtmlEmail(recipientName || "", title, message),
+      })
+      emailSent = true
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Unknown error"
+      console.error("[notifications] Failed to send email:", errorMessage)
+      reason = "SMTP send failed"
+    }
+  }
+
+  let createdNotification: {
+    id: string
+    title: string
+    message: string
+    type: "info" | "success" | "warning" | "error"
+    read: boolean
+    createdAt: string
+  } | null = null
+
+  const notificationDelegate = getNotificationDelegate()
+  if (notificationDelegate) {
+    try {
+      const created = await notificationDelegate.create({
+        data: {
+          email,
+          recipientName,
+          subject,
+          title,
+          message,
+          type,
+          emailSent,
+        },
+      })
+
+      createdNotification = {
+        id: String(created.id),
+        title: created.title,
+        message: created.message,
+        type: (created.type as "info" | "success" | "warning" | "error") || "info",
+        read: false,
+        createdAt: created.createdAt.toISOString(),
+      }
+    } catch (error) {
+      console.error(
+        "[notifications] Failed to persist notification:",
+        error instanceof Error ? error.message : String(error)
+      )
+    }
+  } else if (prisma) {
+    console.warn(
+      "[notifications] Notification model is unavailable on Prisma client. Run prisma generate and restart dev server."
+    )
+    reason = reason || "Notification persistence unavailable"
+  }
+
+  return NextResponse.json({
+    success: true,
+    emailSent,
+    reason,
+    notification: createdNotification,
+  })
+}
+
+export async function GET() {
+  const notificationDelegate = getNotificationDelegate()
+  if (!notificationDelegate) {
+    return NextResponse.json([])
   }
 
   try {
-    await transporter.sendMail({
-      from: getSmtpFrom(),
-      to: email,
-      subject,
-      text: `Hi ${recipientName || "there"},\n\n${title}\n\n${message}\n\n—NoteAI`,
-      html: buildHtmlEmail(recipientName || "", title, message),
+    const notifications = await notificationDelegate.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 50,
     })
 
-    return NextResponse.json({ success: true, emailSent: true })
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : "Unknown error"
-    console.error("[notifications] Failed to send email:", errorMessage)
-    return NextResponse.json({
-      success: true,
-      emailSent: false,
-      reason: "SMTP send failed",
-    })
+    return NextResponse.json(
+      notifications.map((n) => ({
+        id: String(n.id),
+        title: n.title,
+        message: n.message,
+        type: (n.type as "info" | "success" | "warning" | "error") || "info",
+        read: false,
+        createdAt: n.createdAt.toISOString(),
+        emailSent: n.emailSent,
+      }))
+    )
+  } catch (error) {
+    console.error(
+      "[notifications] Failed to load notifications:",
+      error instanceof Error ? error.message : String(error)
+    )
+    return NextResponse.json([])
   }
 }

@@ -47,13 +47,22 @@ export async function GET(
         );
     }
 
-    const note = await prisma.note.findUnique({
-        where: { id: parsedId }
-    });
-    if (!note) {
+    let note;
+    try {
+        note = await prisma.note.findUnique({
+            where: { id: parsedId }
+        });
+        if (!note) {
+            return Response.json(
+                { error: 'Note not found' },
+                { status: 404 }
+            );
+        }
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         return Response.json(
-            { error: 'Note not found' },
-            { status: 404 }
+            { error: 'Database unavailable', details: message },
+            { status: 503 }
         );
     }
     return Response.json(note);
@@ -96,10 +105,17 @@ export async function PUT(
             data: { title, content },
         });
         return Response.json(note);
-    } catch {
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('Record to update not found')) {
+            return Response.json(
+                { error: 'Note not found' },
+                { status: 404 }
+            );
+        }
         return Response.json(
-            { error: 'Note not found' },
-            { status: 404 }
+            { error: 'Database unavailable', details: message },
+            { status: 503 }
         );
     }
 }
@@ -127,10 +143,17 @@ export async function DELETE(
     try {
         await prisma.note.delete({ where: { id: parsedId } });
         return new Response(null, { status: 204 });
-    } catch {
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('Record to delete does not exist')) {
+            return Response.json(
+                { error: 'Note not found' },
+                { status: 404 }
+            );
+        }
         return Response.json(
-            { error: 'Note not found' },
-            { status: 404 }
+            { error: 'Database unavailable', details: message },
+            { status: 503 }
         );
     }
 }
