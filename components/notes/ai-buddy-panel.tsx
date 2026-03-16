@@ -26,6 +26,8 @@ interface AIBuddyPanelProps {
   isOpen: boolean
   onClose: () => void
   noteContent: string
+  noteId?: string
+  noteTitle?: string
 }
 
 const suggestedPrompts = [
@@ -39,6 +41,8 @@ export function AIBuddyPanel({
   isOpen,
   onClose,
   noteContent,
+  noteId,
+  noteTitle,
 }: AIBuddyPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
@@ -72,6 +76,8 @@ export function AIBuddyPanel({
         body: JSON.stringify({
           prompt: messageText,
           noteContent,
+          noteId,
+          noteTitle,
         }),
       })
 

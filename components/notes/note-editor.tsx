@@ -726,6 +726,8 @@ export function NoteEditor({ noteId }: { noteId: string }) {
             isOpen={isAIPanelOpen}
             onClose={() => setIsAIPanelOpen(false)}
             noteContent={plainText}
+            noteId={noteId}
+            noteTitle={title}
           />
         </div>
       </div>

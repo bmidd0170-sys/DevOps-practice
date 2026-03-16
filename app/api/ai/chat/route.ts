@@ -1,13 +1,43 @@
 import OpenAI from 'openai';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { getOpenAIApiKey, getOpenAIChatModel } from '@/lib/env';
+import { getDatabaseUrl } from '@/lib/env';
 
 const apiKey = getOpenAIApiKey();
 const model = getOpenAIChatModel();
 const openai = apiKey ? new OpenAI({ apiKey }) : null;
+const databaseUrl = getDatabaseUrl();
+
+const globalForPrisma = global as unknown as { prisma?: PrismaClient };
+
+let prisma: PrismaClient | null = null;
+
+if (databaseUrl) {
+    prisma = globalForPrisma.prisma || new PrismaClient({
+        adapter: new PrismaPg({
+            connectionString: databaseUrl,
+        }),
+    });
+
+    if (process.env.NODE_ENV !== 'production') {
+        globalForPrisma.prisma = prisma;
+    }
+}
 
 interface ChatRequestBody {
     prompt?: string;
     noteContent?: string;
+    noteId?: string;
+    noteTitle?: string;
+}
+
+function parseNoteId(rawId: string): number | null {
+    const id = Number.parseInt(rawId, 10);
+    if (!Number.isInteger(id) || id <= 0) {
+        return null;
+    }
+    return id;
 }
 
 export async function POST(request: Request) {
@@ -30,6 +60,8 @@ export async function POST(request: Request) {
 
     const prompt = body.prompt?.trim();
     const noteContent = body.noteContent?.trim() || '';
+    const noteTitle = body.noteTitle?.trim() || '';
+    const noteId = body.noteId?.trim();
 
     if (!prompt) {
         return Response.json(
@@ -37,6 +69,34 @@ export async function POST(request: Request) {
             { status: 400 }
         );
     }
+
+    let resolvedNoteTitle = noteTitle;
+    let resolvedNoteContent = noteContent;
+
+    if (!resolvedNoteContent && noteId && noteId !== 'new' && prisma) {
+        const parsedId = parseNoteId(noteId);
+        if (parsedId) {
+            try {
+                const note = await prisma.note.findUnique({
+                    where: { id: parsedId },
+                    select: { title: true, content: true },
+                });
+
+                if (note) {
+                    resolvedNoteTitle = note.title;
+                    resolvedNoteContent = note.content;
+                }
+            } catch {
+                // If note lookup fails, continue with provided payload context.
+            }
+        }
+    }
+
+    const noteContextSections = [
+        `Current note id: ${noteId || '(unknown)'}`,
+        `Current note title: ${resolvedNoteTitle || '(untitled)'}`,
+        `Current note content:\n${resolvedNoteContent || '(No note content provided)'}`,
+    ];
 
     try {
         const response = await openai.chat.completions.create({
@@ -49,7 +109,7 @@ export async function POST(request: Request) {
                 },
                 {
                     role: 'user',
-                    content: `User question:\n${prompt}\n\nCurrent notes:\n${noteContent || '(No note content provided)'}`,
+                    content: `User question:\n${prompt}\n\n${noteContextSections.join('\n\n')}`,
                 },
             ],
             temperature: 0.4,

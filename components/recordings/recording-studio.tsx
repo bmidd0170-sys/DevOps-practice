@@ -17,6 +17,49 @@ interface TranscriptionResponse {
   text?: string
   segments?: Array<{ start?: number; text?: string }>
   error?: string
+  details?: string
+  hint?: string
+}
+
+interface SpeechRecognitionAlternativeItem {
+  transcript: string
+}
+
+interface SpeechRecognitionResultItem {
+  length: number
+  item(index: number): SpeechRecognitionAlternativeItem
+  [index: number]: SpeechRecognitionAlternativeItem
+}
+
+interface SpeechRecognitionResultList {
+  length: number
+  item(index: number): SpeechRecognitionResultItem
+  [index: number]: SpeechRecognitionResultItem
+}
+
+interface SpeechRecognitionEventLike extends Event {
+  results: SpeechRecognitionResultList
+  resultIndex: number
+}
+
+interface SpeechRecognitionLike extends EventTarget {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null
+  onerror: ((event: Event) => void) | null
+  onend: (() => void) | null
+  start(): void
+  stop(): void
+}
+
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionCtor
+    webkitSpeechRecognition?: SpeechRecognitionCtor
+  }
 }
 
 export function RecordingStudio() {
@@ -30,6 +73,90 @@ export function RecordingStudio() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
+  const speechRecognitionRef = useRef<SpeechRecognitionLike | null>(null)
+  const localTranscriptRef = useRef<TranscriptItem[]>([])
+  const recordingTimeRef = useRef(0)
+
+  const formatTime = useCallback((seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+  }, [])
+
+  const stopSpeechRecognition = useCallback(() => {
+    const recognition = speechRecognitionRef.current
+    if (!recognition) return
+
+    try {
+      recognition.onend = null
+      recognition.stop()
+    } catch {
+      // Ignore stop errors from inactive recognizers.
+    }
+
+    speechRecognitionRef.current = null
+  }, [])
+
+  useEffect(() => {
+    recordingTimeRef.current = recordingTime
+  }, [recordingTime])
+
+  const startSpeechRecognition = useCallback(() => {
+    if (typeof window === "undefined") return
+
+    const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognitionImpl) {
+      return
+    }
+
+    stopSpeechRecognition()
+
+    const recognition = new SpeechRecognitionImpl()
+    recognition.continuous = true
+    recognition.interimResults = false
+    recognition.lang = "en-US"
+
+    recognition.onresult = (event) => {
+      const nextItems: TranscriptItem[] = []
+
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const result = event.results.item(i)
+        const text = result?.item(0)?.transcript?.trim() || result?.[0]?.transcript?.trim()
+        if (!text) continue
+
+        nextItems.push({
+          time: formatTime(recordingTimeRef.current),
+          text,
+        })
+      }
+
+      if (nextItems.length === 0) return
+
+      localTranscriptRef.current = [...localTranscriptRef.current, ...nextItems]
+      setTranscript(localTranscriptRef.current)
+    }
+
+    recognition.onerror = () => {
+      // Keep recorder running even when browser speech recognition errors.
+    }
+
+    recognition.onend = () => {
+      if (isRecording && !isPaused) {
+        try {
+          recognition.start()
+        } catch {
+          // Ignore restart failures; server transcription still runs on stop.
+        }
+      }
+    }
+
+    try {
+      recognition.start()
+      speechRecognitionRef.current = recognition
+    } catch {
+      speechRecognitionRef.current = null
+    }
+  }, [formatTime, isPaused, isRecording, stopSpeechRecognition])
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>
@@ -43,19 +170,14 @@ export function RecordingStudio() {
 
   useEffect(() => {
     return () => {
+      stopSpeechRecognition()
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
         mediaRecorderRef.current.stop()
       }
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
       mediaStreamRef.current = null
     }
-  }, [])
-
-  const formatTime = useCallback((seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
-  }, [])
+  }, [stopSpeechRecognition])
 
   const transcribeAudio = useCallback(async (audioBlob: Blob) => {
     setIsTranscribing(true)
@@ -75,7 +197,9 @@ export function RecordingStudio() {
 
       const data = await response.json() as TranscriptionResponse
       if (!response.ok) {
-        throw new Error(data.error || "Transcription failed")
+        const errorParts = [data.error, data.details, data.hint]
+          .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+        throw new Error(errorParts.join(". ") || "Transcription failed")
       }
 
       const mappedSegments = (data.segments || [])
@@ -89,10 +213,20 @@ export function RecordingStudio() {
         setTranscript(mappedSegments)
       } else if (data.text) {
         setTranscript([{ time: "00:00", text: data.text }])
+      } else if (localTranscriptRef.current.length > 0) {
+        setTranscript(localTranscriptRef.current)
       } else {
         setTranscript([])
       }
     } catch (transcriptionError) {
+      if (localTranscriptRef.current.length > 0) {
+        setTranscript(localTranscriptRef.current)
+        setError(
+          "AI transcription is unavailable for this API key. Using browser speech transcript instead."
+        )
+        return
+      }
+
       setError(
         transcriptionError instanceof Error
           ? transcriptionError.message
@@ -123,6 +257,8 @@ export function RecordingStudio() {
         : new MediaRecorder(stream)
 
       chunksRef.current = []
+      localTranscriptRef.current = []
+      setTranscript([])
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -136,6 +272,7 @@ export function RecordingStudio() {
         })
         chunksRef.current = []
         mediaRecorderRef.current = null
+        stopSpeechRecognition()
         mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
         mediaStreamRef.current = null
         void transcribeAudio(audioBlob)
@@ -147,7 +284,7 @@ export function RecordingStudio() {
       setIsRecording(true)
       setIsPaused(false)
       setRecordingTime(0)
-      setTranscript([])
+      startSpeechRecognition()
     } catch (startError) {
       setError(
         startError instanceof Error
@@ -163,6 +300,8 @@ export function RecordingStudio() {
       mediaRecorder.stop()
     }
 
+    stopSpeechRecognition()
+
     setIsRecording(false)
     setIsPaused(false)
   }
@@ -173,12 +312,14 @@ export function RecordingStudio() {
 
     if (mediaRecorder.state === "recording") {
       mediaRecorder.pause()
+      stopSpeechRecognition()
       setIsPaused(true)
       return
     }
 
     if (mediaRecorder.state === "paused") {
       mediaRecorder.resume()
+      startSpeechRecognition()
       setIsPaused(false)
     }
   }
