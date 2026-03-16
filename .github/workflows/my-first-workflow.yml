@@ -15,6 +15,9 @@ jobs:
     name: Build App
     runs-on: ubuntu-latest
 
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,9 +30,6 @@ jobs:
 
       - name: Install dependencies
         run: npm i
-
-      - name: Set DATABASE_URL from secrets file
-        run: echo "DATABASE_URL=$(cat secrets/db-url.txt)" >> $GITHUB_ENV
 
       - name: Generate Prisma client
         run: npx prisma generate
