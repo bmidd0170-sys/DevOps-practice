@@ -1,68 +1,338 @@
-name: CI
+name: CI-CD Docker Deploy
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: ["main", "develop"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch: {}
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
 
 jobs:
   build:
+    name: Build App
     runs-on: ubuntu-latest
-    
-    permissions:
-      contents: write
-    
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_USER: /secrets/db-username.txt
-          POSTGRES_PASSWORD: /secrets/db-password.txt
-          POSTGRES_DB: /secrets/db-name.txt
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-    
+
     env:
-      DATABASE_URL: /secrets/db-url.txt
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      
-      # Install dependencies, run database migrations, and build the project
-      - run: npm i
-      - run: npx prisma generate
-      # - run: npx prisma migrate deploy
-      - run: npm run build
 
-      # Check database health before proceeding with the merge
+      - name: Install dependencies
+        run: npm i
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Build project
+        run: npm run build
+
       - name: Check Database Health
-        run: 
+        run: |
           echo "Checking database connection..."
           npx prisma db execute --stdin <<< "SELECT 1 as health_check;" || exit 1
-          echo "Database is healthy ✓"
+          echo "Database is healthy"
 
-      # Merge develop to main if the current branch is develop and all previous steps succeeded
-      - name: Merge develop to main
-        if: github.ref == 'refs/heads/develop' && success()
+  docker:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Prepare Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  provision-ec2:
+    name: Provision EC2 Instance
+    runs-on: ubuntu-latest
+    needs: docker
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && github.event_name != 'pull_request'
+
+    outputs:
+      instance_id: ${{ steps.ec2.outputs.instance_id }}
+      public_ip: ${{ steps.ec2.outputs.public_ip }}
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Launch, tag, and inspect EC2 instance
+        id: ec2
+        shell: bash
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git checkout main
-          git merge develop --no-edit --allow-unrelated-histories --strategy-option theirs
-          git push origin main
+          set -e
+
+          INSTANCE_ID=$(aws ec2 run-instances \
+            --image-id ami-0b6c6ebed2801a5cb \
+            --count 1 \
+            --instance-type t2.micro \
+            --key-name Brayden \
+            --security-group-ids sg-0b971c14bd9b10e26 \
+            --subnet-id subnet-0b66a114f97a51d2d \
+            --query 'Instances[0].InstanceId' \
+            --output text)
+
+          aws ec2 create-tags \
+            --resources "$INSTANCE_ID" \
+            --tags "Key=Name,Value=Braydens instance"
+
+          aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
+
+          PUBLIC_IP=$(aws ec2 describe-instances \
+            --instance-ids "$INSTANCE_ID" \
+            --query 'Reservations[0].Instances[0].PublicIpAddress' \
+            --output text)
+
+          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
+          echo "public_ip=$PUBLIC_IP" >> "$GITHUB_OUTPUT"
+
+      - name: Show connection details
+        run: |
+          echo "Instance ID: ${{ steps.ec2.outputs.instance_id }}"
+          echo "Public IP:   ${{ steps.ec2.outputs.public_ip }}"
+          echo "SSH command: ssh -i Brayden.pem ec2-user@${{ steps.ec2.outputs.public_ip }}"
+
+      - name: Verify EC2 launch parameters
+        shell: bash
+        run: |
+          set -e
+
+          INSTANCE_ID="${{ steps.ec2.outputs.instance_id }}"
+          EXPECTED_NAME="Braydens instance"
+
+          ACTUAL_STATE=$(aws ec2 describe-instances \
+            --instance-ids "$INSTANCE_ID" \
+            --query 'Reservations[0].Instances[0].State.Name' \
+            --output text)
+
+          ACTUAL_NAME=$(aws ec2 describe-instances \
+            --instance-ids "$INSTANCE_ID" \
+            --query "Reservations[0].Instances[0].Tags[?Key=='Name'].Value | [0]" \
+            --output text)
+
+          ACTUAL_PUBLIC_IP=$(aws ec2 describe-instances \
+            --instance-ids "$INSTANCE_ID" \
+            --query 'Reservations[0].Instances[0].PublicIpAddress' \
+            --output text)
+
+          echo "Verified instance ID: $INSTANCE_ID"
+          echo "Verified state: $ACTUAL_STATE"
+          echo "Verified name: $ACTUAL_NAME"
+          echo "Verified public IP: $ACTUAL_PUBLIC_IP"
+
+          if [ "$ACTUAL_STATE" != "running" ]; then
+            echo "Verification failed: instance is not running"
+            exit 1
+          fi
+
+          if [ "$ACTUAL_NAME" != "$EXPECTED_NAME" ]; then
+            echo "Verification failed: Name tag mismatch"
+            exit 1
+          fi
+
+          if [ -z "$ACTUAL_PUBLIC_IP" ] || [ "$ACTUAL_PUBLIC_IP" = "None" ]; then
+            echo "Verification failed: public IP was not assigned"
+            exit 1
+          fi
+
+          echo "EC2 verification passed: launched to cloud with expected parameters"
+
+  deploy-ec2:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: [docker, provision-ec2]
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && github.event_name != 'pull_request'
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Wait for SSH port
+        shell: bash
+        run: |
+          set -e
+          for i in {1..30}; do
+            if timeout 2 bash -c "</dev/tcp/${{ needs.provision-ec2.outputs.public_ip }}/22" 2>/dev/null; then
+              echo "SSH is ready"
+              exit 0
+            fi
+            echo "Waiting for SSH... ($i/30)"
+            sleep 10
+          done
+          echo "SSH did not become ready in time"
+          exit 1
+
+      - name: Load app secrets from GitHub secrets
+        shell: bash
+        run: |
+          {
+            echo "DATABASE_URL=${{ secrets.DATABASE_URL }}"
+            echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
+            echo "SMTP_HOST=<bmidd0170@launchpadphilly.org>"
+            echo "SMTP_PORT=587"
+            echo "SMTP_USER=<bmidd0170@launchpadphilly.org>"
+            echo "SMTP_PASS=${{ secrets.SMTP_PASS }}"
+            echo "SMTP_FROM=<bmidd0170@launchpadphilly.org>"
+          } >> "$GITHUB_ENV"
+
+      - name: Deploy on EC2 over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          EC2_PROJECT_PATH: ${{ secrets.EC2_PROJECT_PATH }}
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          OPENAI_API_KEY: ${{ env.OPENAI_API_KEY }}
+          SMTP_HOST: ${{ env.SMTP_HOST }}
+          SMTP_PORT: ${{ env.SMTP_PORT }}
+          SMTP_USER: ${{ env.SMTP_USER }}
+          SMTP_PASS: ${{ env.SMTP_PASS }}
+          SMTP_FROM: ${{ env.SMTP_FROM }}
+        with:
+          host: ${{ needs.provision-ec2.outputs.public_ip }}
+          username: ec2-user
+          key: ${{ secrets.EC2_KEY }}
+          port: 22
+          command_timeout: 5m
+          envs: EC2_PROJECT_PATH,DATABASE_URL,OPENAI_API_KEY,SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,SMTP_FROM
+          script: |
+            set -e
+
+            if ! command -v docker &> /dev/null; then
+              echo "Docker not found - installing..."
+              curl -fsSL https://get.docker.com | sh
+              sudo usermod -aG docker $USER
+            fi
+
+            PROJECT_PATH="$EC2_PROJECT_PATH"
+            if [ -z "$PROJECT_PATH" ]; then
+              PROJECT_PATH="/opt/day10-docker-lab"
+            fi
+
+            if [ ! -d "$PROJECT_PATH/.git" ]; then
+              git clone https://github.com/${{ github.repository }}.git "$PROJECT_PATH"
+            fi
+
+            cd "$PROJECT_PATH"
+            DEPLOY_BRANCH="${{ github.ref_name }}"
+            git fetch origin "$DEPLOY_BRANCH"
+            git checkout "$DEPLOY_BRANCH"
+            git pull --ff-only origin "$DEPLOY_BRANCH"
+
+            mkdir -p secrets
+            cat > secrets/db-url.txt <<EOF
+            $DATABASE_URL
+            EOF
+            cat > secrets/openai-api-key.txt <<EOF
+            $OPENAI_API_KEY
+            EOF
+            cat > secrets/smtp-host.txt <<EOF
+            $SMTP_HOST
+            EOF
+            cat > secrets/smtp-email.txt <<EOF
+            $SMTP_USER
+            EOF
+            cat > secrets/smtp-password.txt <<EOF
+            $SMTP_PASS
+            EOF
+
+            docker compose up -d --build
+
+            WEB_CONTAINER_ID=$(docker compose ps -q web)
+            if [ -z "$WEB_CONTAINER_ID" ]; then
+              echo "Verification failed: web container was not created"
+              exit 1
+            fi
+
+            if docker ps --filter "id=$WEB_CONTAINER_ID" --filter "status=running" --format '{{.ID}}' | grep -q .; then
+              echo "Docker verification passed: web container is running"
+            else
+              echo "Verification failed: web container is not running"
+              docker ps -a
+              exit 1
+            fi
+
+            docker image prune -f || true
+
+  terminate-ec2:
+    name: Terminate EC2 After 10 Minutes
+    runs-on: ubuntu-latest
+    needs: [provision-ec2, deploy-ec2]
+    if: always() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && github.event_name != 'pull_request' && needs.provision-ec2.result == 'success'
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Wait 10 minutes before termination
+        shell: bash
+        run: sleep 600
+
+      - name: Terminate provisioned instance
+        shell: bash
+        run: |
+          set -e
+          INSTANCE_ID="${{ needs.provision-ec2.outputs.instance_id }}"
+          echo "Terminating instance: $INSTANCE_ID"
+          aws ec2 terminate-instances --instance-ids "$INSTANCE_ID"
+          aws ec2 wait instance-terminated --instance-ids "$INSTANCE_ID"
+          echo "Instance terminated: $INSTANCE_ID"

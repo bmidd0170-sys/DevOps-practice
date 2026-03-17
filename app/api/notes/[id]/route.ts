@@ -19,6 +19,14 @@ if (databaseUrl) {
     }
 }
 
+function parseNoteId(rawId: string): number | null {
+    const id = Number.parseInt(rawId, 10);
+    if (!Number.isInteger(id) || id <= 0) {
+        return null;
+    }
+    return id;
+}
+
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
@@ -31,14 +39,121 @@ export async function GET(
     }
 
     const { id } = await params;
-    const note = await prisma.note.findUnique({
-        where: { id: parseInt(id) }
-    });
-    if (!note) {
+    const parsedId = parseNoteId(id);
+    if (!parsedId) {
         return Response.json(
-            { error: 'Note not found' },
-            { status: 404 }
+            { error: 'Invalid note id' },
+            { status: 400 }
+        );
+    }
+
+    let note;
+    try {
+        note = await prisma.note.findUnique({
+            where: { id: parsedId }
+        });
+        if (!note) {
+            return Response.json(
+                { error: 'Note not found' },
+                { status: 404 }
+            );
+        }
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return Response.json(
+            { error: 'Database unavailable', details: message },
+            { status: 503 }
         );
     }
     return Response.json(note);
+}
+
+export async function PUT(
+    request: Request,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    if (!prisma) {
+        return Response.json(
+            { error: 'Database not configured' },
+            { status: 500 }
+        );
+    }
+
+    const { id } = await params;
+    const parsedId = parseNoteId(id);
+    if (!parsedId) {
+        return Response.json(
+            { error: 'Invalid note id' },
+            { status: 400 }
+        );
+    }
+
+    const body = await request.json().catch(() => null);
+    const title = typeof body?.title === 'string' ? body.title.trim() : '';
+    const content = typeof body?.content === 'string' ? body.content.trim() : '';
+
+    if (!title || !content) {
+        return Response.json(
+            { error: 'Title and content are required' },
+            { status: 400 }
+        );
+    }
+
+    try {
+        const note = await prisma.note.update({
+            where: { id: parsedId },
+            data: { title, content },
+        });
+        return Response.json(note);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('Record to update not found')) {
+            return Response.json(
+                { error: 'Note not found' },
+                { status: 404 }
+            );
+        }
+        return Response.json(
+            { error: 'Database unavailable', details: message },
+            { status: 503 }
+        );
+    }
+}
+
+export async function DELETE(
+    request: Request,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    if (!prisma) {
+        return Response.json(
+            { error: 'Database not configured' },
+            { status: 500 }
+        );
+    }
+
+    const { id } = await params;
+    const parsedId = parseNoteId(id);
+    if (!parsedId) {
+        return Response.json(
+            { error: 'Invalid note id' },
+            { status: 400 }
+        );
+    }
+
+    try {
+        await prisma.note.delete({ where: { id: parsedId } });
+        return new Response(null, { status: 204 });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('Record to delete does not exist')) {
+            return Response.json(
+                { error: 'Note not found' },
+                { status: 404 }
+            );
+        }
+        return Response.json(
+            { error: 'Database unavailable', details: message },
+            { status: 503 }
+        );
+    }
 }

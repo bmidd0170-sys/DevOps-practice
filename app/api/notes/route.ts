@@ -27,10 +27,18 @@ export async function GET() {
         );
     }
 
-    const notes = await prisma.note.findMany({
-        orderBy: { createdAt: 'desc' }
-    });
-    return Response.json(notes);
+    try {
+        const notes = await prisma.note.findMany({
+            orderBy: { createdAt: 'desc' }
+        });
+        return Response.json(notes);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return Response.json(
+            { error: 'Database unavailable', details: message },
+            { status: 503 }
+        );
+    }
 }
 
 export async function POST(request: Request) {
@@ -41,12 +49,30 @@ export async function POST(request: Request) {
         );
     }
 
-    const body = await request.json();
-    const note = await prisma.note.create({
-        data: {
-            title: body.title,
-            content: body.content,
-        }
-    });
-    return Response.json(note, { status: 201 });
+    const body = await request.json().catch(() => null);
+    const title = typeof body?.title === 'string' ? body.title.trim() : '';
+    const content = typeof body?.content === 'string' ? body.content.trim() : '';
+
+    if (!title || !content) {
+        return Response.json(
+            { error: 'Title and content are required' },
+            { status: 400 }
+        );
+    }
+
+    try {
+        const note = await prisma.note.create({
+            data: {
+                title,
+                content,
+            }
+        });
+        return Response.json(note, { status: 201 });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return Response.json(
+            { error: 'Database unavailable', details: message },
+            { status: 503 }
+        );
+    }
 }
