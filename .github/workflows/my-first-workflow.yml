@@ -216,27 +216,17 @@ jobs:
           echo "SSH did not become ready in time"
           exit 1
 
-      - name: Load app secrets from files
+      - name: Load app secrets from GitHub secrets
         shell: bash
         run: |
           {
-            echo "DATABASE_URL<<EOF"
-            cat secrets/db-url.txt
-            echo "EOF"
-            echo "OPENAI_API_KEY<<EOF"
-            cat secrets/openai-api-key.txt
-            echo "EOF"
-            echo "SMTP_HOST<<EOF"
-            cat secrets/smtp-host.txt
-            echo "EOF"
+            echo "DATABASE_URL=${{ secrets.DATABASE_URL }}"
+            echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
+            echo "SMTP_HOST=<bmidd0170@launchpadphilly.org>"
             echo "SMTP_PORT=587"
-            echo "SMTP_USER<<EOF"
-            cat secrets/smtp-email.txt
-            echo "EOF"
-            echo "SMTP_PASS<<EOF"
-            cat secrets/smtp-password.txt
-            echo "EOF"
-            echo "SMTP_FROM=NoteAI <bmidd0170@launchpadphilly.org>"
+            echo "SMTP_USER=<bmidd0170@launchpadphilly.org>"
+            echo "SMTP_PASS=${{ secrets.SMTP_PASS }}"
+            echo "SMTP_FROM=<bmidd0170@launchpadphilly.org>"
           } >> "$GITHUB_ENV"
 
       - name: Deploy on EC2 over SSH
