@@ -13,7 +13,7 @@ This is a [Next.js](https://nextjs.org) application featuring:
 
 ## Getting Started
 
-### Local Development
+### Local Development 
 
 1. Install dependencies:
 ```bash
