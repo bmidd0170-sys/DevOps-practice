@@ -149,7 +149,7 @@ jobs:
           set -e
 
           INSTANCE_ID="${{ steps.ec2.outputs.instance_id }}"
-          EXPECTED_NAME="brayden's instance"
+          EXPECTED_NAME="Braydens instance"
 
           ACTUAL_STATE=$(aws ec2 describe-instances \
             --instance-ids "$INSTANCE_ID" \
