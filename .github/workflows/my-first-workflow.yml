@@ -197,6 +197,7 @@ jobs:
 
     permissions:
       contents: read
+      packages: read
 
     steps:
       - name: Checkout
@@ -304,13 +305,16 @@ jobs:
           SMTP_USER: ${{ env.SMTP_USER }}
           SMTP_PASS: ${{ env.SMTP_PASS }}
           SMTP_FROM: ${{ env.SMTP_FROM }}
+          APP_IMAGE: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
         with:
           host: ${{ needs.provision-ec2.outputs.public_ip }}
           username: ${{ secrets.EC2_SSH_USER || 'ubuntu' }}
           key: ${{ secrets.EC2_KEY }}
           port: 22
           command_timeout: 5m
-          envs: EC2_PROJECT_PATH,DATABASE_URL,OPENAI_API_KEY,SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,SMTP_FROM
+          envs: EC2_PROJECT_PATH,DATABASE_URL,OPENAI_API_KEY,SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,SMTP_FROM,APP_IMAGE,GHCR_USERNAME,GHCR_TOKEN
           script: |
             set -e
 
@@ -352,9 +356,18 @@ jobs:
             $SMTP_PASS
             EOF
 
-            sudo docker compose up -d --build
+            echo "$GHCR_TOKEN" | sudo docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
-            WEB_CONTAINER_ID=$(sudo docker compose ps -q web)
+            cat > docker-compose.deploy.yml <<EOF
+            services:
+              web:
+                image: $APP_IMAGE
+            EOF
+
+            sudo docker compose -f docker-compose.yml -f docker-compose.deploy.yml pull web
+            sudo docker compose -f docker-compose.yml -f docker-compose.deploy.yml up -d
+
+            WEB_CONTAINER_ID=$(sudo docker compose -f docker-compose.yml -f docker-compose.deploy.yml ps -q web)
             if [ -z "$WEB_CONTAINER_ID" ]; then
               echo "Verification failed: web container was not created"
               exit 1
