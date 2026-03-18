@@ -352,23 +352,23 @@ jobs:
             $SMTP_PASS
             EOF
 
-            docker compose up -d --build
+            sudo docker compose up -d --build
 
-            WEB_CONTAINER_ID=$(docker compose ps -q web)
+            WEB_CONTAINER_ID=$(sudo docker compose ps -q web)
             if [ -z "$WEB_CONTAINER_ID" ]; then
               echo "Verification failed: web container was not created"
               exit 1
             fi
 
-            if docker ps --filter "id=$WEB_CONTAINER_ID" --filter "status=running" --format '{{.ID}}' | grep -q .; then
+            if sudo docker ps --filter "id=$WEB_CONTAINER_ID" --filter "status=running" --format '{{.ID}}' | grep -q .; then
               echo "Docker verification passed: web container is running"
             else
               echo "Verification failed: web container is not running"
-              docker ps -a
+              sudo docker ps -a
               exit 1
             fi
 
-            docker image prune -f || true
+            sudo docker image prune -f || true
 
   terminate-ec2:
     name: Terminate EC2 After 10 Minutes
