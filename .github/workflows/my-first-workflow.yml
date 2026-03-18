@@ -358,10 +358,13 @@ jobs:
 
             echo "$GHCR_TOKEN" | sudo docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
+            APP_IMAGE_LOWER="$(echo "$APP_IMAGE" | tr '[:upper:]' '[:lower:]')"
+            echo "Using image: $APP_IMAGE_LOWER"
+
             cat > docker-compose.deploy.yml <<EOF
             services:
               web:
-                image: $APP_IMAGE
+                image: $APP_IMAGE_LOWER
             EOF
 
             sudo docker compose -f docker-compose.yml -f docker-compose.deploy.yml pull web
