@@ -343,6 +343,25 @@ jobs:
             cat > secrets/db-url.txt <<EOF
             $DATABASE_URL
             EOF
+
+            # Derive postgres bootstrap secrets required by docker-compose healthcheck.
+            DB_URL_NO_PROTO="${DATABASE_URL#*://}"
+            DB_CRED_PART="${DB_URL_NO_PROTO%%@*}"
+            DB_USER="${DB_CRED_PART%%:*}"
+            DB_PASS="${DB_CRED_PART#*:}"
+            DB_AFTER_AT="${DB_URL_NO_PROTO#*@}"
+            DB_PATH_PART="${DB_AFTER_AT#*/}"
+            DB_NAME="${DB_PATH_PART%%\?*}"
+
+            if [ -z "$DB_USER" ] || [ -z "$DB_PASS" ] || [ -z "$DB_NAME" ]; then
+              echo "Failed to parse DATABASE_URL into db username/password/name"
+              exit 1
+            fi
+
+            printf '%s\n' "$DB_USER" > secrets/db-username.txt
+            printf '%s\n' "$DB_PASS" > secrets/db-password.txt
+            printf '%s\n' "$DB_NAME" > secrets/db-name.txt
+
             cat > secrets/openai-api-key.txt <<EOF
             $OPENAI_API_KEY
             EOF
