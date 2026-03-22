@@ -139,9 +139,10 @@ jobs:
 
       - name: Show connection details
         run: |
+          SSH_USER="${{ secrets.EC2_SSH_USER || 'ubuntu' }}"
           echo "Instance ID: ${{ steps.ec2.outputs.instance_id }}"
           echo "Public IP:   ${{ steps.ec2.outputs.public_ip }}"
-          echo "SSH command: ssh -i Brayden.pem ec2-user@${{ steps.ec2.outputs.public_ip }}"
+          echo "SSH command: ssh ${SSH_USER}@${{ steps.ec2.outputs.public_ip }}"
 
       - name: Verify EC2 launch parameters
         shell: bash
@@ -196,25 +197,89 @@ jobs:
 
     permissions:
       contents: read
+      packages: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checking EC2 SSH access
+        shell: bash
+        run: |
+          set -euo pipefail
+          SSH_USER="${{ secrets.EC2_SSH_USER || 'ubuntu' }}"
+
+          if [ -z "$SSH_USER" ]; then
+            echo "Resolved SSH user is empty. Set EC2_SSH_USER secret or use default ubuntu."
+            exit 1
+          fi
+
+          if [ -z "${{ secrets.EC2_KEY }}" ]; then
+            echo "EC2_KEY secret is empty or missing. Add a valid private key in repo secrets."
+            exit 1
+          fi
+
+          TMP_KEY="$(mktemp)"
+          printf '%s\n' "${{ secrets.EC2_KEY }}" > "$TMP_KEY"
+          chmod 400 "$TMP_KEY"
+
+          if ! ssh-keygen -y -f "$TMP_KEY" > /dev/null 2>&1; then
+            echo "EC2_KEY exists but is not a valid private key."
+            echo "Ensure it includes BEGIN/END private key lines and real newlines."
+            rm -f "$TMP_KEY"
+            exit 1
+          fi
+
+          rm -f "$TMP_KEY"
+          echo "EC2_KEY format looks valid."
+          echo "Using SSH user: $SSH_USER"
+
       - name: Wait for SSH port
         shell: bash
         run: |
           set -e
-          for i in {1..30}; do
+          sleep 90
+          for i in {1..5}; do
             if timeout 2 bash -c "</dev/tcp/${{ needs.provision-ec2.outputs.public_ip }}/22" 2>/dev/null; then
               echo "SSH is ready"
               exit 0
             fi
-            echo "Waiting for SSH... ($i/30)"
+            echo "Waiting for SSH... ($i/5)"
             sleep 10
           done
           echo "SSH did not become ready in time"
           exit 1
+
+      - name: Preflight SSH authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SSH_USER="${{ secrets.EC2_SSH_USER || 'ubuntu' }}"
+          HOST="${{ needs.provision-ec2.outputs.public_ip }}"
+          TMP_KEY="$(mktemp)"
+
+          printf '%s\n' "${{ secrets.EC2_KEY }}" > "$TMP_KEY"
+          chmod 400 "$TMP_KEY"
+
+          echo "Testing SSH authentication to ${SSH_USER}@${HOST}:22"
+
+          if ssh \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -i "$TMP_KEY" \
+            "$SSH_USER@$HOST" "echo ssh-auth-ok" >/dev/null 2>&1; then
+            echo "SSH preflight passed: key and username are accepted."
+          else
+            echo "SSH preflight failed: authentication was rejected for user '$SSH_USER'."
+            echo "Verify EC2_KEY matches the instance key pair and EC2_SSH_USER matches the AMI default user."
+            rm -f "$TMP_KEY"
+            exit 1
+          fi
+
+          rm -f "$TMP_KEY"
 
       - name: Load app secrets from GitHub secrets
         shell: bash
@@ -240,13 +305,16 @@ jobs:
           SMTP_USER: ${{ env.SMTP_USER }}
           SMTP_PASS: ${{ env.SMTP_PASS }}
           SMTP_FROM: ${{ env.SMTP_FROM }}
+          APP_IMAGE: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
         with:
           host: ${{ needs.provision-ec2.outputs.public_ip }}
-          username: ec2-user
+          username: ${{ secrets.EC2_SSH_USER || 'ubuntu' }}
           key: ${{ secrets.EC2_KEY }}
           port: 22
           command_timeout: 5m
-          envs: EC2_PROJECT_PATH,DATABASE_URL,OPENAI_API_KEY,SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,SMTP_FROM
+          envs: EC2_PROJECT_PATH,DATABASE_URL,OPENAI_API_KEY,SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,SMTP_FROM,APP_IMAGE,GHCR_USERNAME,GHCR_TOKEN
           script: |
             set -e
 
@@ -275,6 +343,25 @@ jobs:
             cat > secrets/db-url.txt <<EOF
             $DATABASE_URL
             EOF
+
+            # Derive postgres bootstrap secrets required by docker-compose healthcheck.
+            DB_URL_NO_PROTO="${DATABASE_URL#*://}"
+            DB_CRED_PART="${DB_URL_NO_PROTO%%@*}"
+            DB_USER="${DB_CRED_PART%%:*}"
+            DB_PASS="${DB_CRED_PART#*:}"
+            DB_AFTER_AT="${DB_URL_NO_PROTO#*@}"
+            DB_PATH_PART="${DB_AFTER_AT#*/}"
+            DB_NAME="${DB_PATH_PART%%\?*}"
+
+            if [ -z "$DB_USER" ] || [ -z "$DB_PASS" ] || [ -z "$DB_NAME" ]; then
+              echo "Failed to parse DATABASE_URL into db username/password/name"
+              exit 1
+            fi
+
+            printf '%s\n' "$DB_USER" > secrets/db-username.txt
+            printf '%s\n' "$DB_PASS" > secrets/db-password.txt
+            printf '%s\n' "$DB_NAME" > secrets/db-name.txt
+
             cat > secrets/openai-api-key.txt <<EOF
             $OPENAI_API_KEY
             EOF
@@ -288,29 +375,41 @@ jobs:
             $SMTP_PASS
             EOF
 
-            docker compose up -d --build
+            echo "$GHCR_TOKEN" | sudo docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
-            WEB_CONTAINER_ID=$(docker compose ps -q web)
+            APP_IMAGE_LOWER="$(echo "$APP_IMAGE" | tr '[:upper:]' '[:lower:]')"
+            echo "Using image: $APP_IMAGE_LOWER"
+
+            cat > docker-compose.deploy.yml <<EOF
+            services:
+              web:
+                image: $APP_IMAGE_LOWER
+            EOF
+
+            sudo docker compose -f docker-compose.yml -f docker-compose.deploy.yml pull web
+            sudo docker compose -f docker-compose.yml -f docker-compose.deploy.yml up -d
+
+            WEB_CONTAINER_ID=$(sudo docker compose -f docker-compose.yml -f docker-compose.deploy.yml ps -q web)
             if [ -z "$WEB_CONTAINER_ID" ]; then
               echo "Verification failed: web container was not created"
               exit 1
             fi
 
-            if docker ps --filter "id=$WEB_CONTAINER_ID" --filter "status=running" --format '{{.ID}}' | grep -q .; then
+            if sudo docker ps --filter "id=$WEB_CONTAINER_ID" --filter "status=running" --format '{{.ID}}' | grep -q .; then
               echo "Docker verification passed: web container is running"
             else
               echo "Verification failed: web container is not running"
-              docker ps -a
+              sudo docker ps -a
               exit 1
             fi
 
-            docker image prune -f || true
+            sudo docker image prune -f || true
 
   terminate-ec2:
     name: Terminate EC2 After 10 Minutes
     runs-on: ubuntu-latest
     needs: [provision-ec2, deploy-ec2]
-    if: always() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && github.event_name != 'pull_request' && needs.provision-ec2.result == 'success'
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && github.event_name != 'pull_request' && needs.provision-ec2.result == 'success' && needs.deploy-ec2.result == 'success'
 
     permissions:
       contents: read
