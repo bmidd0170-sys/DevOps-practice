@@ -15,6 +15,11 @@ export interface AppNotification {
   createdAt: string
 }
 
+export interface SendNotificationResult {
+  emailSent: boolean
+  reason?: string
+}
+
 interface NotificationContextValue {
   notifications: AppNotification[]
   unreadCount: number
@@ -24,7 +29,7 @@ interface NotificationContextValue {
   /** Adds in-app notification and optionally sends an email via the API */
   sendNotification: (
     payload: NotificationPayload & { type?: AppNotification["type"] }
-  ) => Promise<void>
+  ) => Promise<SendNotificationResult>
 }
 
 const NotificationContext = createContext<NotificationContextValue | null>(null)
@@ -134,7 +139,11 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           throw new Error("Failed to send notification")
         }
 
-        const data = (await response.json()) as { notification?: AppNotification | null }
+        const data = (await response.json()) as {
+          notification?: AppNotification | null
+          emailSent?: boolean
+          reason?: string
+        }
         if (data.notification) {
           setNotifications((prev) => {
             const withoutTemp = prev.filter((n) => n.id !== tempId)
@@ -144,6 +153,11 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         } else {
           setNotifications((prev) => persist(prev.filter((n) => n.id !== tempId)))
           addNotification({ title: rest.title, message: rest.message, type })
+        }
+
+        return {
+          emailSent: Boolean(data.emailSent),
+          reason: data.reason,
         }
       } catch {
         // Keep local notification even when API/email fails.
@@ -156,6 +170,11 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
             )
           )
         )
+
+        return {
+          emailSent: false,
+          reason: "Failed to send notification",
+        }
       }
     },
     [addNotification]

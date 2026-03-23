@@ -47,37 +47,37 @@ export async function POST(request: Request) {
 
     const user = existing
       ? await prisma.user.update({
-          where: { id: existing.id },
-          data: {
-            ...(!existing.email && authHeaders.email ? { email: authHeaders.email } : {}),
-            ...(!existing.displayName && authHeaders.displayName
-              ? { displayName: authHeaders.displayName }
-              : {}),
-          },
-          select: {
-            id: true,
-            firebaseUid: true,
-            email: true,
-            displayName: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        })
+        where: { id: existing.id },
+        data: {
+          ...(!existing.email && authHeaders.email ? { email: authHeaders.email } : {}),
+          ...(!existing.displayName && authHeaders.displayName
+            ? { displayName: authHeaders.displayName }
+            : {}),
+        },
+        select: {
+          id: true,
+          firebaseUid: true,
+          email: true,
+          displayName: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      })
       : await prisma.user.create({
-          data: {
-            firebaseUid: authHeaders.uid,
-            email: authHeaders.email,
-            displayName: authHeaders.displayName,
-          },
-          select: {
-            id: true,
-            firebaseUid: true,
-            email: true,
-            displayName: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        })
+        data: {
+          firebaseUid: authHeaders.uid,
+          email: authHeaders.email,
+          displayName: authHeaders.displayName,
+        },
+        select: {
+          id: true,
+          firebaseUid: true,
+          email: true,
+          displayName: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      })
 
     return Response.json({ user })
   } catch (error) {

@@ -227,23 +227,23 @@ export async function POST(req: NextRequest) {
 
       const user = existingUser
         ? await prisma?.user.update({
-            where: { id: existingUser.id },
-            data: {
-              ...(!existingUser.email && authHeaders.email ? { email: authHeaders.email } : {}),
-              ...(!existingUser.displayName && authHeaders.displayName
-                ? { displayName: authHeaders.displayName }
-                : {}),
-            },
-            select: { id: true },
-          })
+          where: { id: existingUser.id },
+          data: {
+            ...(!existingUser.email && authHeaders.email ? { email: authHeaders.email } : {}),
+            ...(!existingUser.displayName && authHeaders.displayName
+              ? { displayName: authHeaders.displayName }
+              : {}),
+          },
+          select: { id: true },
+        })
         : await prisma?.user.create({
-            data: {
-              firebaseUid: authHeaders.uid,
-              email: authHeaders.email,
-              displayName: authHeaders.displayName,
-            },
-            select: { id: true },
-          })
+          data: {
+            firebaseUid: authHeaders.uid,
+            email: authHeaders.email,
+            displayName: authHeaders.displayName,
+          },
+          select: { id: true },
+        })
 
       if (!user) {
         return NextResponse.json({ error: "Database not configured" }, { status: 500 })
