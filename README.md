@@ -25,6 +25,14 @@ npm install
 Required for core app:
 - `DATABASE_URL=postgresql://...`
 
+Required for Firebase email/password auth:
+- `NEXT_PUBLIC_FIREBASE_API_KEY=...`
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID=...`
+- `NEXT_PUBLIC_FIREBASE_APP_ID=...`
+
+In your Firebase console, enable `Authentication -> Sign-in method -> Email/Password`.
+
 Required for AI features:
 - `OPENAI_API_KEY=...`
 
@@ -67,6 +75,8 @@ Database values are loaded from files in `secrets/`:
 
 AI values for Docker are also loaded from files in `secrets/`:
 - `secrets/openai-api-key.txt`
+
+Firebase client values can be set in your shell or compose environment as `NEXT_PUBLIC_FIREBASE_*` variables.
 
 These files are ignored by git.
 

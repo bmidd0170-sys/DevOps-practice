@@ -10,12 +10,18 @@ model Note {
   id Int @id @default(autoincrement())
   title String
   content String
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId, updatedAt])
 }
 
 model Notification {
   id           Int      @id @default(autoincrement())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   email        String
   recipientName String?
   subject      String
@@ -24,4 +30,37 @@ model Notification {
   type         String   @default("info")
   emailSent    Boolean  @default(false)
   createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model User {
+  id          String         @id @default(cuid())
+  firebaseUid String         @unique
+  email       String?
+  displayName String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  settings    UserSettings?
+  notes       Note[]
+  notifications Notification[]
+}
+
+model UserSettings {
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  theme                  String   @default("system")
+  compactMode            Boolean  @default(false)
+  studyReminders         Boolean  @default(true)
+  recordingCompleted     Boolean  @default(true)
+  weeklySummary          Boolean  @default(false)
+  audioQuality           String   @default("high")
+  autoTranscribe         Boolean  @default(true)
+  responseStyle          String   @default("balanced")
+  showCitations          Boolean  @default(true)
+  autoGenerateFlashcards Boolean  @default(false)
+  analytics              Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 }

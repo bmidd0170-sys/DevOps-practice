@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
+import { withFirebaseUserHeaders } from "@/lib/client-auth"
 
 interface Note {
   id: number
@@ -126,7 +127,10 @@ function NoteActions({
     const confirmed = window.confirm(`Delete "${note.title}"? This cannot be undone.`)
     if (!confirmed) return
 
-    const response = await fetch(`/api/notes/${note.id}`, { method: "DELETE" })
+    const response = await fetch(`/api/notes/${note.id}`, {
+      method: "DELETE",
+      headers: withFirebaseUserHeaders(),
+    })
     if (!response.ok) {
       const payload = await response.json().catch(() => null)
       toast.error(payload?.error ?? "Failed to delete note")
@@ -143,7 +147,7 @@ function NoteActions({
 
     const response = await fetch("/api/notes", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withFirebaseUserHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         title: `${note.title} (Copy)`,
         content: note.content,
