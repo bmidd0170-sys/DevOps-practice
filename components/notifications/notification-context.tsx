@@ -139,16 +139,31 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           throw new Error("Failed to send notification")
         }
 
-        const data = (await response.json()) as {
+        let data: {
           notification?: AppNotification | null
           emailSent?: boolean
           reason?: string
+        } | null = null
+
+        try {
+          data = (await response.json()) as {
+            notification?: AppNotification | null
+            emailSent?: boolean
+            reason?: string
+          }
+        } catch (parseError) {
+          // Response wasn't valid JSON; treat as email send attempt
+          data = {
+            emailSent: false,
+            reason: "Response parsing failed",
+          }
         }
-        if (data.notification) {
+
+        if (data?.notification) {
           setNotifications((prev) => {
             const withoutTemp = prev.filter((n) => n.id !== tempId)
-            const exists = withoutTemp.some((n) => n.id === data.notification!.id)
-            return exists ? persist(withoutTemp) : persist([data.notification!, ...withoutTemp])
+            const exists = withoutTemp.some((n) => n.id === data?.notification?.id)
+            return exists ? persist(withoutTemp) : persist([data!.notification!, ...withoutTemp])
           })
         } else {
           setNotifications((prev) => persist(prev.filter((n) => n.id !== tempId)))
@@ -156,8 +171,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         }
 
         return {
-          emailSent: Boolean(data.emailSent),
-          reason: data.reason,
+          emailSent: Boolean(data?.emailSent),
+          reason: data?.reason,
         }
       } catch {
         // Keep local notification even when API/email fails.
