@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 import {
   getDatabaseUrl,
+  getSmtpConfigDebug,
   getSmtpHost,
   getSmtpPort,
   getSmtpUser,
@@ -14,7 +15,7 @@ import {
 import { getAuthHeaders } from "@/lib/server-auth"
 
 export interface NotificationPayload {
-  email: string
+  email?: string
   recipientName?: string
   subject: string
   title: string
@@ -151,18 +152,18 @@ export async function POST(req: NextRequest) {
   }
 
   const { email, recipientName, subject, title, message, type = "info" } = body
+  const normalizedEmail =
+    typeof email === "string" && email.trim()
+      ? email.trim()
+      : typeof authHeaders.email === "string" && authHeaders.email.trim()
+        ? authHeaders.email.trim()
+        : ""
 
-  if (!email || !subject || !title || !message) {
+  if (!subject || !title || !message) {
     return NextResponse.json(
-      { error: "Missing required fields: email, subject, title, message" },
+      { error: "Missing required fields: subject, title, message" },
       { status: 400 }
     )
-  }
-
-  // Basic email format validation (security: reject obviously bad inputs)
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!emailRegex.test(email)) {
-    return NextResponse.json({ error: "Invalid email address" }, { status: 400 })
   }
 
   const transporter = buildTransporter()
@@ -170,17 +171,31 @@ export async function POST(req: NextRequest) {
   let reason: string | undefined
 
   if (!transporter) {
+    const smtpDebug = getSmtpConfigDebug()
     console.warn(
-      "[notifications] SMTP not configured — skipping email. Set SMTP_HOST, SMTP_USER, and SMTP_PASS to enable."
+      `[notifications] SMTP not configured — skipping email. Missing: ${smtpDebug.missing.join(", ") || "none"}. Set SMTP_HOST, SMTP_USER, and SMTP_PASS to enable.`
     )
     reason = "SMTP not configured"
   }
 
-  if (transporter) {
+  if (transporter && !normalizedEmail) {
+    reason = "Recipient email missing"
+    console.warn(
+      "[notifications] SMTP configured but recipient email is missing — skipping email send."
+    )
+  }
+
+  if (transporter && normalizedEmail) {
+    // Basic email format validation (security: reject obviously bad inputs)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(normalizedEmail)) {
+      return NextResponse.json({ error: "Invalid email address" }, { status: 400 })
+    }
+
     try {
       await transporter.sendMail({
         from: getSmtpFrom(),
-        to: email,
+        to: normalizedEmail,
         subject,
         text: `Hi ${recipientName || "there"},\n\n${title}\n\n${message}\n\n—NoteAI`,
         html: buildHtmlEmail(recipientName || "", title, message),
@@ -237,7 +252,7 @@ export async function POST(req: NextRequest) {
       const created = await notificationDelegate.create({
         data: {
           userId: user.id,
-          email,
+          email: normalizedEmail,
           recipientName,
           subject,
           title,

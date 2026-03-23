@@ -55,7 +55,7 @@ export default function LoginPage() {
       )
 
       if (isSignUp) {
-        // Send a welcome notification in-app + email on new account creation.
+        // Send a welcome notification in-app and email when SMTP is configured.
         await sendNotification({
           email: trimmedEmail,
           recipientName: fullName || trimmedEmail,

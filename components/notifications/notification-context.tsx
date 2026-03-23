@@ -21,7 +21,7 @@ interface NotificationContextValue {
   addNotification: (n: Omit<AppNotification, "id" | "read" | "createdAt">) => void
   markAllRead: () => void
   clearAll: () => void
-  /** Adds in-app notification AND sends an email via the API */
+  /** Adds in-app notification and optionally sends an email via the API */
   sendNotification: (
     payload: NotificationPayload & { type?: AppNotification["type"] }
   ) => Promise<void>
