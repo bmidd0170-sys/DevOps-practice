@@ -15,6 +15,7 @@ import {
   ArrowRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { withFirebaseUserHeaders } from "@/lib/client-auth"
 
 interface Message {
   id: string
@@ -70,9 +71,9 @@ export function AIBuddyPanel({
     try {
       const response = await fetch("/api/ai/chat", {
         method: "POST",
-        headers: {
+        headers: withFirebaseUserHeaders({
           "Content-Type": "application/json",
-        },
+        }),
         body: JSON.stringify({
           prompt: messageText,
           noteContent,

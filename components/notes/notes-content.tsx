@@ -9,6 +9,7 @@ import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { formatDistanceToNow } from "date-fns"
 import { toast } from "sonner"
+import { withFirebaseUserHeaders } from "@/lib/client-auth"
 
 interface ApiNote {
   id: number
@@ -38,7 +39,10 @@ export function NotesContent() {
     setIsLoading(true)
     setLoadError(null)
     try {
-      const response = await fetch("/api/notes", { cache: "no-store" })
+      const response = await fetch("/api/notes", {
+        cache: "no-store",
+        headers: withFirebaseUserHeaders(),
+      })
       const payload = await response.json().catch(() => null)
 
       if (!response.ok) {

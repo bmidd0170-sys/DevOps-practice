@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import {
   LayoutDashboard,
@@ -13,9 +13,11 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
+  LogOut,
 } from "lucide-react"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { useAuth } from "@/components/auth/auth-context"
 
 const navItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -28,7 +30,14 @@ const navItems = [
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const router = useRouter()
   const [collapsed, setCollapsed] = useState(false)
+  const { signOutUser } = useAuth()
+
+  const handleLogout = async () => {
+    await signOutUser()
+    router.push("/login")
+  }
 
   return (
     <aside
@@ -54,7 +63,7 @@ export function AppSidebar() {
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-1">
         {navItems.map((item) => {
-          const isActive = pathname === item.href || 
+          const isActive = pathname === item.href ||
             (item.href !== "/" && pathname.startsWith(item.href))
           return (
             <Link
@@ -76,6 +85,15 @@ export function AppSidebar() {
 
       {/* Collapse Toggle */}
       <div className="p-3 border-t border-sidebar-border">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleLogout}
+          className={cn("mb-2 w-full", collapsed ? "justify-center" : "justify-start gap-2")}
+        >
+          <LogOut className="w-4 h-4" />
+          {!collapsed && <span>Log out</span>}
+        </Button>
         <Button
           variant="ghost"
           size="sm"

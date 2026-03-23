@@ -4,6 +4,7 @@ import { useEffect } from "react"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { NotificationProvider } from "@/components/notifications/notification-context"
+import { AuthProvider } from "@/components/auth/auth-context"
 
 const SETTINGS_STORAGE_KEY = "noteai.settings.v1"
 
@@ -26,10 +27,12 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
 
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-      <NotificationProvider>
-        {children}
-        <Toaster richColors position="top-right" />
-      </NotificationProvider>
+      <AuthProvider>
+        <NotificationProvider>
+          {children}
+          <Toaster richColors position="top-right" />
+        </NotificationProvider>
+      </AuthProvider>
     </ThemeProvider>
   )
 }

@@ -11,6 +11,7 @@ import {
   getSmtpFrom,
   isSmtpConfigured,
 } from "@/lib/env"
+import { getAuthHeaders } from "@/lib/server-auth"
 
 export interface NotificationPayload {
   email: string
@@ -44,6 +45,7 @@ function getNotificationDelegate() {
       create: (args: {
         data: {
           email: string
+          userId: string
           recipientName?: string
           subject: string
           title: string
@@ -60,6 +62,7 @@ function getNotificationDelegate() {
         emailSent: boolean
       }>
       findMany: (args: {
+        where: { userId: string }
         orderBy: { createdAt: "desc" }
         take: number
       }) => Promise<
@@ -134,6 +137,11 @@ function buildHtmlEmail(name: string, title: string, message: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  const authHeaders = getAuthHeaders(req)
+  if (!authHeaders) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 })
+  }
+
   let body: NotificationPayload
 
   try {
@@ -197,8 +205,38 @@ export async function POST(req: NextRequest) {
   const notificationDelegate = getNotificationDelegate()
   if (notificationDelegate) {
     try {
+      const existingUser = await prisma?.user.findUnique({
+        where: { firebaseUid: authHeaders.uid },
+        select: { id: true, email: true, displayName: true },
+      })
+
+      const user = existingUser
+        ? await prisma?.user.update({
+            where: { id: existingUser.id },
+            data: {
+              ...(!existingUser.email && authHeaders.email ? { email: authHeaders.email } : {}),
+              ...(!existingUser.displayName && authHeaders.displayName
+                ? { displayName: authHeaders.displayName }
+                : {}),
+            },
+            select: { id: true },
+          })
+        : await prisma?.user.create({
+            data: {
+              firebaseUid: authHeaders.uid,
+              email: authHeaders.email,
+              displayName: authHeaders.displayName,
+            },
+            select: { id: true },
+          })
+
+      if (!user) {
+        return NextResponse.json({ error: "Database not configured" }, { status: 500 })
+      }
+
       const created = await notificationDelegate.create({
         data: {
+          userId: user.id,
           email,
           recipientName,
           subject,
@@ -238,14 +276,29 @@ export async function POST(req: NextRequest) {
   })
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authHeaders = getAuthHeaders(req)
+  if (!authHeaders) {
+    return NextResponse.json([])
+  }
+
   const notificationDelegate = getNotificationDelegate()
   if (!notificationDelegate) {
     return NextResponse.json([])
   }
 
   try {
+    const user = await prisma?.user.findUnique({
+      where: { firebaseUid: authHeaders.uid },
+      select: { id: true },
+    })
+
+    if (!user) {
+      return NextResponse.json([])
+    }
+
     const notifications = await notificationDelegate.findMany({
+      where: { userId: user.id },
       orderBy: { createdAt: "desc" },
       take: 50,
     })

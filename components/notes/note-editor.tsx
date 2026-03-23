@@ -26,6 +26,7 @@ import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
+import { withFirebaseUserHeaders } from "@/lib/client-auth"
 
 const sampleContent = `# Introduction to Machine Learning
 
@@ -215,7 +216,10 @@ export function NoteEditor({ noteId }: { noteId: string }) {
 
       setIsLoadingNote(true)
       try {
-        const response = await fetch(`/api/notes/${noteId}`, { cache: "no-store" })
+        const response = await fetch(`/api/notes/${noteId}`, {
+          cache: "no-store",
+          headers: withFirebaseUserHeaders(),
+        })
         const payload = await response.json().catch(() => null)
 
         if (!response.ok) {
@@ -511,7 +515,7 @@ export function NoteEditor({ noteId }: { noteId: string }) {
 
       const response = await fetch(endpoint, {
         method,
-        headers: { "Content-Type": "application/json" },
+        headers: withFirebaseUserHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           title: cleanTitle,
           content,

@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { getDatabaseUrl } from '@/lib/env';
+import { getAuthHeaders } from '@/lib/server-auth';
 
 const globalForPrisma = global as unknown as { prisma?: PrismaClient };
 
@@ -38,6 +39,14 @@ export async function GET(
         );
     }
 
+    const authHeaders = getAuthHeaders(request);
+    if (!authHeaders) {
+        return Response.json(
+            { error: 'Authentication required' },
+            { status: 401 }
+        );
+    }
+
     const { id } = await params;
     const parsedId = parseNoteId(id);
     if (!parsedId) {
@@ -47,10 +56,31 @@ export async function GET(
         );
     }
 
+    let user;
+    try {
+        user = await prisma.user.findUnique({
+            where: { firebaseUid: authHeaders.uid },
+            select: { id: true },
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return Response.json(
+            { error: 'Database unavailable', details: message },
+            { status: 503 }
+        );
+    }
+
+    if (!user) {
+        return Response.json(
+            { error: 'Note not found' },
+            { status: 404 }
+        );
+    }
+
     let note;
     try {
-        note = await prisma.note.findUnique({
-            where: { id: parsedId }
+        note = await prisma.note.findFirst({
+            where: { id: parsedId, userId: user.id }
         });
         if (!note) {
             return Response.json(
@@ -79,6 +109,14 @@ export async function PUT(
         );
     }
 
+    const authHeaders = getAuthHeaders(request);
+    if (!authHeaders) {
+        return Response.json(
+            { error: 'Authentication required' },
+            { status: 401 }
+        );
+    }
+
     const { id } = await params;
     const parsedId = parseNoteId(id);
     if (!parsedId) {
@@ -100,6 +138,30 @@ export async function PUT(
     }
 
     try {
+        const user = await prisma.user.findUnique({
+            where: { firebaseUid: authHeaders.uid },
+            select: { id: true },
+        });
+
+        if (!user) {
+            return Response.json(
+                { error: 'Note not found' },
+                { status: 404 }
+            );
+        }
+
+        const existing = await prisma.note.findFirst({
+            where: { id: parsedId, userId: user.id },
+            select: { id: true },
+        });
+
+        if (!existing) {
+            return Response.json(
+                { error: 'Note not found' },
+                { status: 404 }
+            );
+        }
+
         const note = await prisma.note.update({
             where: { id: parsedId },
             data: { title, content },
@@ -131,6 +193,14 @@ export async function DELETE(
         );
     }
 
+    const authHeaders = getAuthHeaders(request);
+    if (!authHeaders) {
+        return Response.json(
+            { error: 'Authentication required' },
+            { status: 401 }
+        );
+    }
+
     const { id } = await params;
     const parsedId = parseNoteId(id);
     if (!parsedId) {
@@ -141,6 +211,30 @@ export async function DELETE(
     }
 
     try {
+        const user = await prisma.user.findUnique({
+            where: { firebaseUid: authHeaders.uid },
+            select: { id: true },
+        });
+
+        if (!user) {
+            return Response.json(
+                { error: 'Note not found' },
+                { status: 404 }
+            );
+        }
+
+        const existing = await prisma.note.findFirst({
+            where: { id: parsedId, userId: user.id },
+            select: { id: true },
+        });
+
+        if (!existing) {
+            return Response.json(
+                { error: 'Note not found' },
+                { status: 404 }
+            );
+        }
+
         await prisma.note.delete({ where: { id: parsedId } });
         return new Response(null, { status: 204 });
     } catch (error) {

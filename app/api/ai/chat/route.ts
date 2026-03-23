@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { getOpenAIApiKey, getOpenAIChatModel } from '@/lib/env';
 import { getDatabaseUrl } from '@/lib/env';
+import { getAuthHeaders } from '@/lib/server-auth';
 
 const apiKey = getOpenAIApiKey();
 const model = getOpenAIChatModel();
@@ -23,6 +24,32 @@ if (databaseUrl) {
     if (process.env.NODE_ENV !== 'production') {
         globalForPrisma.prisma = prisma;
     }
+}
+
+function getUserDelegate() {
+    const delegate = (prisma as PrismaClient & {
+        user?: {
+            findUnique: (args: {
+                where: { firebaseUid: string };
+                select: { id: true };
+            }) => Promise<{ id: string } | null>;
+        };
+    } | null)?.user;
+
+    return delegate ?? null;
+}
+
+function getNoteDelegate() {
+    const delegate = (prisma as PrismaClient & {
+        note?: {
+            findFirst: (args: {
+                where: { id: number; userId: string };
+                select: { title: true; content: true };
+            }) => Promise<{ title: string; content: string } | null>;
+        };
+    } | null)?.note;
+
+    return delegate ?? null;
 }
 
 interface ChatRequestBody {
@@ -70,15 +97,39 @@ export async function POST(request: Request) {
         );
     }
 
+    const authHeaders = getAuthHeaders(request);
+    if (!authHeaders) {
+        return Response.json(
+            { error: 'Authentication required' },
+            { status: 401 }
+        );
+    }
+
+    let userId: string | null = null;
+    const userDelegate = getUserDelegate();
+    if (userDelegate) {
+        try {
+            const user = await userDelegate.findUnique({
+                where: { firebaseUid: authHeaders.uid },
+                select: { id: true },
+            });
+            userId = user?.id ?? null;
+        } catch {
+            userId = null;
+        }
+    }
+
     let resolvedNoteTitle = noteTitle;
     let resolvedNoteContent = noteContent;
 
-    if (!resolvedNoteContent && noteId && noteId !== 'new' && prisma) {
+    const noteDelegate = getNoteDelegate();
+
+    if (!resolvedNoteContent && noteId && noteId !== 'new' && noteDelegate && userId) {
         const parsedId = parseNoteId(noteId);
         if (parsedId) {
             try {
-                const note = await prisma.note.findUnique({
-                    where: { id: parsedId },
+                const note = await noteDelegate.findFirst({
+                    where: { id: parsedId, userId },
                     select: { title: true, content: true },
                 });
 
@@ -122,9 +173,9 @@ export async function POST(request: Request) {
     } catch (error) {
         const status =
             typeof error === 'object' &&
-            error !== null &&
-            'status' in error &&
-            typeof (error as { status?: unknown }).status === 'number'
+                error !== null &&
+                'status' in error &&
+                typeof (error as { status?: unknown }).status === 'number'
                 ? (error as { status: number }).status
                 : 500;
 

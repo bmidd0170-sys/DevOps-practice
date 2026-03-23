@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react"
 import type { NotificationPayload } from "@/app/api/notifications/route"
+import { withFirebaseUserHeaders } from "@/lib/client-auth"
 
 const STORE_KEY = "noteai.notifications.v1"
 
@@ -36,7 +37,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
     const loadNotifications = async () => {
       try {
-        const response = await fetch("/api/notifications", { cache: "no-store" })
+        const response = await fetch("/api/notifications", {
+          cache: "no-store",
+          headers: withFirebaseUserHeaders(),
+        })
         if (!response.ok) {
           throw new Error("Failed to load notifications")
         }
@@ -122,7 +126,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       try {
         const response = await fetch("/api/notifications", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: withFirebaseUserHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ ...rest, type }),
         })
 

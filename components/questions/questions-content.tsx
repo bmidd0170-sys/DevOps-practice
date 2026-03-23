@@ -187,7 +187,7 @@ export function QuestionsContent() {
             >
               <div className="pt-2 border-t border-border">
                 <p className="text-sm text-muted-foreground leading-relaxed">{item.answer}</p>
-                
+
                 {item.citations.length > 0 && (
                   <div className="mt-4 space-y-2">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">

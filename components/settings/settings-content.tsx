@@ -17,12 +17,15 @@ import {
 import { User, Bell, Palette, Mic, Brain, Shield, Download } from "lucide-react"
 import { toast } from "sonner"
 import { useNotifications } from "@/components/notifications/notification-context"
+import { useAuth } from "@/components/auth/auth-context"
+import { withFirebaseUserHeaders } from "@/lib/client-auth"
 
 const SETTINGS_STORAGE_KEY = "noteai.settings.v1"
 
 type AppTheme = "light" | "dark" | "system"
 
 interface AppSettings {
+  theme: AppTheme
   compactMode: boolean
   studyReminders: boolean
   recordingCompleted: boolean
@@ -36,6 +39,7 @@ interface AppSettings {
 }
 
 const defaultSettings: AppSettings = {
+  theme: "system",
   compactMode: false,
   studyReminders: true,
   recordingCompleted: true,
@@ -53,11 +57,25 @@ function applyCompactMode(enabled: boolean) {
 }
 
 export function SettingsContent() {
+  const { user, loading } = useAuth()
   const { theme, setTheme } = useTheme()
   const [name, setName] = useState("John Doe")
   const [email, setEmail] = useState("john@example.com")
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
+  const [isHydrated, setIsHydrated] = useState(false)
   const { sendNotification } = useNotifications()
+
+  const persistSettingsLocal = (next: AppSettings) => {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next))
+  }
+
+  const persistSettingsRemote = async (next: AppSettings) => {
+    await fetch("/api/users/settings", {
+      method: "PUT",
+      headers: withFirebaseUserHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ settings: next }),
+    })
+  }
 
   /** Fire an in-app notification + email when a notification setting is enabled */
   const notifyToggle = async (
@@ -90,26 +108,88 @@ export function SettingsContent() {
   }
 
   useEffect(() => {
-    try {
-      const rawSettings = localStorage.getItem(SETTINGS_STORAGE_KEY)
-      if (!rawSettings) return
+    if (loading || !user) return
 
-      const parsed = JSON.parse(rawSettings) as Partial<AppSettings>
-      const merged = { ...defaultSettings, ...parsed }
-      setSettings(merged)
-      applyCompactMode(Boolean(merged.compactMode))
-    } catch {
-      setSettings(defaultSettings)
+    let cancelled = false
+
+    const hydrateSettings = async () => {
+      try {
+        const response = await fetch("/api/users/settings", {
+          headers: withFirebaseUserHeaders(),
+          cache: "no-store",
+        })
+
+        const payload = await response.json().catch(() => null)
+        if (!response.ok) {
+          throw new Error(payload?.error ?? "Failed to load settings")
+        }
+
+        const remoteSettings = (payload?.settings ?? {}) as Partial<AppSettings>
+        const merged = { ...defaultSettings, ...remoteSettings }
+
+        if (cancelled) return
+
+        setSettings(merged)
+        setName(typeof payload?.profile?.name === "string" ? payload.profile.name : user.displayName || "")
+        setEmail(typeof payload?.profile?.email === "string" ? payload.profile.email : user.email || "")
+        setTheme(merged.theme)
+        applyCompactMode(Boolean(merged.compactMode))
+
+        localStorage.setItem("noteai.profile.v1", JSON.stringify({
+          name: (typeof payload?.profile?.name === "string" ? payload.profile.name : user.displayName || "").trim(),
+          email: (typeof payload?.profile?.email === "string" ? payload.profile.email : user.email || "").trim(),
+        }))
+        persistSettingsLocal(merged)
+      } catch {
+        try {
+          const rawSettings = localStorage.getItem(SETTINGS_STORAGE_KEY)
+          const rawProfile = localStorage.getItem("noteai.profile.v1")
+          const localSettings = rawSettings ? (JSON.parse(rawSettings) as Partial<AppSettings>) : {}
+          const localProfile = rawProfile ? (JSON.parse(rawProfile) as { name?: string; email?: string }) : {}
+
+          const merged = { ...defaultSettings, ...localSettings }
+
+          if (cancelled) return
+
+          setSettings(merged)
+          setName(localProfile.name || user.displayName || "")
+          setEmail(localProfile.email || user.email || "")
+          setTheme(merged.theme)
+          applyCompactMode(Boolean(merged.compactMode))
+        } catch {
+          if (!cancelled) {
+            setSettings(defaultSettings)
+            setName(user.displayName || "")
+            setEmail(user.email || "")
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setIsHydrated(true)
+        }
+      }
     }
-  }, [])
+
+    void hydrateSettings()
+
+    return () => {
+      cancelled = true
+    }
+  }, [loading, setTheme, user])
 
   const patchSettings = (partial: Partial<AppSettings>) => {
     setSettings((previous) => {
       const next = { ...previous, ...partial }
-      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next))
+      persistSettingsLocal(next)
 
       if (partial.compactMode !== undefined) {
         applyCompactMode(partial.compactMode)
+      }
+
+      if (isHydrated) {
+        void persistSettingsRemote(next).catch(() => {
+          toast.error("Failed to save settings to your account")
+        })
       }
 
       return next
@@ -118,10 +198,11 @@ export function SettingsContent() {
 
   const handleThemeChange = (nextTheme: AppTheme) => {
     setTheme(nextTheme)
+    patchSettings({ theme: nextTheme })
     toast.success(`Theme updated to ${nextTheme}`)
   }
 
-  const saveProfile = () => {
+  const saveProfile = async () => {
     const trimmedName = name.trim()
     const trimmedEmail = email.trim()
 
@@ -131,7 +212,28 @@ export function SettingsContent() {
     }
 
     localStorage.setItem("noteai.profile.v1", JSON.stringify({ name: trimmedName, email: trimmedEmail }))
-    toast.success("Profile saved")
+
+    try {
+      const response = await fetch("/api/users/settings", {
+        method: "PUT",
+        headers: withFirebaseUserHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          profile: {
+            name: trimmedName,
+            email: trimmedEmail,
+          },
+        }),
+      })
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null)
+        throw new Error(payload?.error ?? "Failed to save profile")
+      }
+
+      toast.success("Profile saved")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save profile")
+    }
   }
 
   const exportData = () => {
@@ -150,18 +252,6 @@ export function SettingsContent() {
     URL.revokeObjectURL(url)
     toast.success("Data export downloaded")
   }
-
-  useEffect(() => {
-    try {
-      const rawProfile = localStorage.getItem("noteai.profile.v1")
-      if (!rawProfile) return
-      const profile = JSON.parse(rawProfile) as { name?: string; email?: string }
-      if (profile.name) setName(profile.name)
-      if (profile.email) setEmail(profile.email)
-    } catch {
-      // Ignore invalid profile storage.
-    }
-  }, [])
 
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-3xl">
