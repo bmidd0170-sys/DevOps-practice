@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -15,72 +15,81 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
+import { formatDistanceToNow } from "date-fns"
+import { withFirebaseUserHeaders } from "@/lib/client-auth"
 
-const questionsHistory = [
-  {
-    id: "1",
-    question: "What are the key differences between supervised and unsupervised learning?",
-    answer: "Supervised learning uses labeled training data where the algorithm learns from example input-output pairs. The model makes predictions based on these examples. Unsupervised learning deals with unlabeled data, where the system tries to find patterns and structure without explicit guidance.",
-    noteId: "1",
-    noteTitle: "Introduction to Machine Learning",
-    date: "2 hours ago",
-    citations: [
-      { text: "Supervised Learning", preview: "In supervised learning, the algorithm learns from labeled training data..." },
-      { text: "Unsupervised Learning", preview: "Unsupervised learning deals with unlabeled data..." },
-    ],
-  },
-  {
-    id: "2",
-    question: "Explain the mechanism of addition reactions in alkenes",
-    answer: "Addition reactions in alkenes involve the breaking of the carbon-carbon double bond and the addition of atoms or groups to each of the carbon atoms. The pi bond in the double bond is relatively weak and can be broken to allow new bonds to form. Common addition reactions include hydrogenation, halogenation, and hydration.",
-    noteId: "2",
-    noteTitle: "Organic Chemistry - Alkenes",
-    date: "Yesterday",
-    citations: [
-      { text: "Addition Reactions", preview: "Alkenes undergo addition reactions due to their unsaturated nature..." },
-    ],
-  },
-  {
-    id: "3",
-    question: "What were the main causes of World War II?",
-    answer: "The main causes of World War II include: 1) The Treaty of Versailles and its harsh terms on Germany, 2) The rise of fascism and nationalism in Europe, 3) The global economic depression of the 1930s, 4) The policy of appeasement by Western powers, and 5) Germany's aggressive expansion under Nazi rule.",
-    noteId: "3",
-    noteTitle: "World War II Overview",
-    date: "3 days ago",
-    citations: [],
-  },
-  {
-    id: "4",
-    question: "What is the difference between overfitting and underfitting?",
-    answer: "Overfitting occurs when a model learns the training data too well, including noise and outliers, causing it to perform poorly on new data. Underfitting happens when a model is too simple to capture the underlying patterns in the data. Both result in poor generalization to new, unseen data.",
-    noteId: "1",
-    noteTitle: "Introduction to Machine Learning",
-    date: "4 days ago",
-    citations: [
-      { text: "Overfitting and Underfitting", preview: "Overfitting occurs when a model learns the training data too well..." },
-    ],
-  },
-  {
-    id: "5",
-    question: "Summarize the key integration techniques in calculus",
-    answer: "Key integration techniques include: 1) Basic integration using antiderivatives, 2) Integration by substitution (u-substitution), 3) Integration by parts, 4) Partial fractions for rational functions, 5) Trigonometric substitution for integrals involving square roots, and 6) Numerical methods like Simpson's rule for approximations.",
-    noteId: "4",
-    noteTitle: "Calculus - Integration Techniques",
-    date: "5 days ago",
-    citations: [],
-  },
-]
+interface ApiQuestion {
+  id: number
+  question: string
+  answer: string
+  createdAt: string
+  noteId: number | null
+  noteTitle: string | null
+}
 
 export function QuestionsContent() {
   const [searchQuery, setSearchQuery] = useState("")
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [questionsHistory, setQuestionsHistory] = useState<ApiQuestion[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
-  const filteredQuestions = questionsHistory.filter(
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadQuestions() {
+      try {
+        const response = await fetch("/api/questions", {
+          cache: "no-store",
+          headers: withFirebaseUserHeaders(),
+        })
+        const payload = await response.json().catch(() => null)
+
+        if (!response.ok) {
+          throw new Error(payload?.error ?? "Failed to load AI questions")
+        }
+
+        if (!isMounted) return
+        setQuestionsHistory(Array.isArray(payload) ? payload : [])
+        setLoadError(null)
+      } catch (error) {
+        if (!isMounted) return
+        setQuestionsHistory([])
+        setLoadError(error instanceof Error ? error.message : "Failed to load AI questions")
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    void loadQuestions()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  const filteredQuestions = useMemo(() => questionsHistory.filter(
     (q) =>
       q.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
       q.answer.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      q.noteTitle.toLowerCase().includes(searchQuery.toLowerCase())
+      (q.noteTitle || "general chat").toLowerCase().includes(searchQuery.toLowerCase())
+  ), [questionsHistory, searchQuery])
+
+  const uniqueNoteCount = useMemo(
+    () => new Set(questionsHistory.map((item) => item.noteId).filter((id) => id !== null)).size,
+    [questionsHistory]
   )
+
+  const thisWeekCount = useMemo(() => {
+    const now = Date.now()
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
+    return questionsHistory.filter((item) => {
+      const createdAt = new Date(item.createdAt).getTime()
+      return Number.isFinite(createdAt) && now - createdAt <= sevenDaysMs
+    }).length
+  }, [questionsHistory])
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
@@ -113,7 +122,7 @@ export function QuestionsContent() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Notes Referenced</p>
-                <p className="text-2xl font-bold text-foreground">4</p>
+                <p className="text-2xl font-bold text-foreground">{uniqueNoteCount}</p>
               </div>
             </div>
           </CardContent>
@@ -126,12 +135,15 @@ export function QuestionsContent() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">This Week</p>
-                <p className="text-2xl font-bold text-foreground">12</p>
+                <p className="text-2xl font-bold text-foreground">{thisWeekCount}</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {isLoading && <p className="text-sm text-muted-foreground">Loading question history...</p>}
+      {loadError && <p className="text-sm text-destructive">{loadError}</p>}
 
       {/* Search */}
       <div className="relative max-w-md">
@@ -156,14 +168,16 @@ export function QuestionsContent() {
                   </CardTitle>
                   <div className="flex items-center gap-3 mt-2">
                     <Link
-                      href={`/notes/${item.noteId}`}
+                      href={item.noteId ? `/notes/${item.noteId}` : "/notes"}
                       className="flex items-center gap-1.5 text-sm text-primary hover:underline"
                     >
                       <FileText className="w-3 h-3" />
-                      {item.noteTitle}
+                      {item.noteTitle || "General chat"}
                       <ExternalLink className="w-3 h-3" />
                     </Link>
-                    <span className="text-sm text-muted-foreground">{item.date}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
+                    </span>
                   </div>
                 </div>
                 <Button
@@ -188,24 +202,21 @@ export function QuestionsContent() {
               <div className="pt-2 border-t border-border">
                 <p className="text-sm text-muted-foreground leading-relaxed">{item.answer}</p>
 
-                {item.citations.length > 0 && (
+                {item.noteId && item.noteTitle && (
                   <div className="mt-4 space-y-2">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      Referenced Sections
+                      Referenced Note
                     </p>
-                    {item.citations.map((citation, index) => (
-                      <Link
-                        key={index}
-                        href={`/notes/${item.noteId}`}
-                        className="flex items-start gap-2 p-2 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                      >
-                        <FileText className="w-3 h-3 text-primary mt-0.5 shrink-0" />
-                        <div>
-                          <p className="text-xs font-medium text-foreground">{citation.text}</p>
-                          <p className="text-xs text-muted-foreground line-clamp-1">{citation.preview}</p>
-                        </div>
-                      </Link>
-                    ))}
+                    <Link
+                      href={`/notes/${item.noteId}`}
+                      className="flex items-start gap-2 p-2 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                    >
+                      <FileText className="w-3 h-3 text-primary mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-xs font-medium text-foreground">{item.noteTitle}</p>
+                        <p className="text-xs text-muted-foreground line-clamp-1">Open note context</p>
+                      </div>
+                    </Link>
                   </div>
                 )}
               </div>

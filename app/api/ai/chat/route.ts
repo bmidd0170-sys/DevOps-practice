@@ -52,6 +52,23 @@ function getNoteDelegate() {
     return delegate ?? null;
 }
 
+function getAiQuestionDelegate() {
+    const delegate = (prisma as PrismaClient & {
+        aiQuestion?: {
+            create: (args: {
+                data: {
+                    userId: string;
+                    noteId?: number;
+                    question: string;
+                    answer: string;
+                };
+            }) => Promise<{ id: number }>;
+        };
+    } | null)?.aiQuestion;
+
+    return delegate ?? null;
+}
+
 interface ChatRequestBody {
     prompt?: string;
     noteContent?: string;
@@ -166,8 +183,28 @@ export async function POST(request: Request) {
             temperature: 0.4,
         });
 
+        const answer = response.choices[0]?.message?.content?.trim() || 'I could not generate a response.';
+
+        const aiQuestionDelegate = getAiQuestionDelegate();
+        const parsedNoteId = noteId && noteId !== 'new' ? parseNoteId(noteId) : null;
+
+        if (aiQuestionDelegate && userId) {
+            try {
+                await aiQuestionDelegate.create({
+                    data: {
+                        userId,
+                        ...(parsedNoteId ? { noteId: parsedNoteId } : {}),
+                        question: prompt,
+                        answer,
+                    },
+                });
+            } catch {
+                // Do not fail chat when persistence is unavailable.
+            }
+        }
+
         return Response.json({
-            answer: response.choices[0]?.message?.content?.trim() || 'I could not generate a response.',
+            answer,
             model,
         });
     } catch (error) {

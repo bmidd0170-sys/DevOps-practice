@@ -108,6 +108,13 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const clearAll = useCallback(() => {
     setNotifications([])
     localStorage.removeItem(STORE_KEY)
+
+    void fetch("/api/notifications", {
+      method: "DELETE",
+      headers: withFirebaseUserHeaders(),
+    }).catch(() => {
+      // Keep UX snappy even if server-side cleanup fails transiently.
+    })
   }, [])
 
   const sendNotification = useCallback(

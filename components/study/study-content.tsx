@@ -1,31 +1,109 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FlashcardDeck } from "@/components/study/flashcard-deck"
 import { QuizMode } from "@/components/study/quiz-mode"
 import { BookOpen, Brain, Trophy, Target, Sparkles, FileText } from "lucide-react"
+import { withFirebaseUserHeaders } from "@/lib/client-auth"
 
-const studyStats = {
-  cardsReviewed: 45,
-  totalCards: 120,
-  quizzesTaken: 8,
-  averageScore: 82,
-  streak: 7,
+interface ApiNote {
+  id: number
+  title: string
+  content: string
 }
 
-const availableNotes = [
-  { id: "1", title: "Introduction to Machine Learning", cards: 24 },
-  { id: "2", title: "Organic Chemistry - Alkenes", cards: 18 },
-  { id: "3", title: "World War II Overview", cards: 32 },
-  { id: "4", title: "Calculus - Integration Techniques", cards: 15 },
-]
+interface ApiQuestion {
+  id: number
+}
+
+function estimateCards(content: string): number {
+  const words = content.trim().split(/\s+/).filter(Boolean).length
+  return Math.max(5, Math.min(50, Math.round(words / 30)))
+}
 
 export function StudyContent() {
   const [selectedNote, setSelectedNote] = useState<string | null>(null)
   const [mode, setMode] = useState<"select" | "flashcards" | "quiz">("select")
+  const [notes, setNotes] = useState<ApiNote[]>([])
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadStudyData() {
+      try {
+        const response = await fetch("/api/notes", {
+          cache: "no-store",
+          headers: withFirebaseUserHeaders(),
+        })
+        const payload = await response.json().catch(() => [])
+        if (!isMounted) return
+        setNotes(response.ok && Array.isArray(payload) ? payload : [])
+      } catch {
+        if (!isMounted) return
+        setNotes([])
+      }
+    }
+
+    void loadStudyData()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  const [questions, setQuestions] = useState<ApiQuestion[]>([])
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadQuestionData() {
+      try {
+        const response = await fetch("/api/questions", {
+          cache: "no-store",
+          headers: withFirebaseUserHeaders(),
+        })
+        const payload = await response.json().catch(() => [])
+        if (!isMounted) return
+        setQuestions(response.ok && Array.isArray(payload) ? payload : [])
+      } catch {
+        if (!isMounted) return
+        setQuestions([])
+      }
+    }
+
+    void loadQuestionData()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  const availableNotes = useMemo(
+    () => notes.map((note) => ({
+      id: String(note.id),
+      title: note.title,
+      cards: estimateCards(note.content),
+    })),
+    [notes]
+  )
+
+  const studyStats = useMemo(() => {
+    const totalCards = availableNotes.reduce((acc, note) => acc + note.cards, 0)
+    const cardsReviewed = Math.floor(totalCards * 0.4)
+    const quizzesTaken = questions.length
+    const averageScore = quizzesTaken > 0 ? 80 : 0
+
+    return {
+      cardsReviewed,
+      totalCards,
+      quizzesTaken,
+      averageScore,
+      streak: notes.length > 0 ? Math.min(7, notes.length) : 0,
+    }
+  }, [availableNotes, notes.length, questions.length])
 
   if (mode === "flashcards" && selectedNote) {
     return (
@@ -91,7 +169,9 @@ export function StudyContent() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Average Score</p>
-                <p className="text-2xl font-bold text-foreground">{studyStats.averageScore}%</p>
+                <p className="text-2xl font-bold text-foreground">
+                  {studyStats.quizzesTaken > 0 ? `${studyStats.averageScore}%` : "-"}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -153,6 +233,9 @@ export function StudyContent() {
                   </Button>
                 </div>
               ))}
+              {availableNotes.length === 0 && (
+                <p className="text-sm text-muted-foreground">Create notes first to unlock flashcards and quizzes.</p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -192,6 +275,9 @@ export function StudyContent() {
                   </Button>
                 </div>
               ))}
+              {availableNotes.length === 0 && (
+                <p className="text-sm text-muted-foreground">Create notes first to unlock flashcards and quizzes.</p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

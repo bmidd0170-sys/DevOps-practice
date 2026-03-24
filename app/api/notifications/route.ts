@@ -76,10 +76,22 @@ function getNotificationDelegate() {
           emailSent: boolean
         }>
       >
+      deleteMany: (args: {
+        where: { userId: string }
+      }) => Promise<{ count: number }>
     }
   } | null)?.notification
 
   return delegate ?? null
+}
+
+async function getUserIdFromAuthHeaders(authHeaders: { uid: string }) {
+  const user = await prisma?.user.findUnique({
+    where: { firebaseUid: authHeaders.uid },
+    select: { id: true },
+  })
+
+  return user?.id ?? null
 }
 
 function buildTransporter() {
@@ -303,17 +315,13 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const user = await prisma?.user.findUnique({
-      where: { firebaseUid: authHeaders.uid },
-      select: { id: true },
-    })
-
-    if (!user) {
+    const userId = await getUserIdFromAuthHeaders(authHeaders)
+    if (!userId) {
       return NextResponse.json([])
     }
 
     const notifications = await notificationDelegate.findMany({
-      where: { userId: user.id },
+      where: { userId },
       orderBy: { createdAt: "desc" },
       take: 50,
     })
@@ -335,5 +343,36 @@ export async function GET(req: NextRequest) {
       error instanceof Error ? error.message : String(error)
     )
     return NextResponse.json([])
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const authHeaders = getAuthHeaders(req)
+  if (!authHeaders) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 })
+  }
+
+  const notificationDelegate = getNotificationDelegate()
+  if (!notificationDelegate) {
+    return NextResponse.json({ deletedCount: 0 })
+  }
+
+  try {
+    const userId = await getUserIdFromAuthHeaders(authHeaders)
+    if (!userId) {
+      return NextResponse.json({ deletedCount: 0 })
+    }
+
+    const result = await notificationDelegate.deleteMany({
+      where: { userId },
+    })
+
+    return NextResponse.json({ deletedCount: result.count })
+  } catch (error) {
+    console.error(
+      "[notifications] Failed to delete notifications:",
+      error instanceof Error ? error.message : String(error)
+    )
+    return NextResponse.json({ error: "Failed to delete notifications" }, { status: 500 })
   }
 }

@@ -1,27 +1,96 @@
 "use client"
 
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Plus, Mic, FileText, MessageSquare, Clock, TrendingUp, BookOpen, Calendar } from "lucide-react"
 import Link from "next/link"
+import { formatDistanceToNow } from "date-fns"
+import { withFirebaseUserHeaders } from "@/lib/client-auth"
 
-const recentNotes = [
-  { id: 1, title: "Introduction to Machine Learning", date: "2 hours ago", tags: ["AI", "Computer Science"] },
-  { id: 2, title: "Organic Chemistry - Alkenes", date: "Yesterday", tags: ["Chemistry"] },
-  { id: 3, title: "World War II Overview", date: "2 days ago", tags: ["History"] },
-]
+interface ApiNote {
+  id: number
+  title: string
+  updatedAt: string
+}
 
-const recentRecordings = [
-  { id: 1, title: "Calculus Lecture 12", duration: "45:23", date: "Today" },
-  { id: 2, title: "Physics Lab Discussion", duration: "32:10", date: "Yesterday" },
-]
+interface ApiRecording {
+  id: number
+  title: string
+  durationSeconds: number
+  createdAt: string
+}
 
-const recentQuestions = [
-  { id: 1, question: "What are the key differences between supervised and unsupervised learning?", note: "Introduction to Machine Learning" },
-  { id: 2, question: "Explain the mechanism of addition reactions in alkenes", note: "Organic Chemistry - Alkenes" },
-]
+interface ApiQuestion {
+  id: number
+  question: string
+  noteTitle: string | null
+}
+
+function formatDuration(seconds: number): string {
+  const safeSeconds = Number.isFinite(seconds) ? Math.max(0, Math.round(seconds)) : 0
+  const hours = Math.floor(safeSeconds / 3600)
+  const mins = Math.floor((safeSeconds % 3600) / 60)
+  const secs = safeSeconds % 60
+
+  if (hours > 0) {
+    return `${hours}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+  }
+
+  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+}
 
 export function DashboardContent() {
+  const [notes, setNotes] = useState<ApiNote[]>([])
+  const [recordings, setRecordings] = useState<ApiRecording[]>([])
+  const [questions, setQuestions] = useState<ApiQuestion[]>([])
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadData() {
+      try {
+        const [notesResponse, recordingsResponse, questionsResponse] = await Promise.all([
+          fetch("/api/notes", { cache: "no-store", headers: withFirebaseUserHeaders() }),
+          fetch("/api/recordings", { cache: "no-store", headers: withFirebaseUserHeaders() }),
+          fetch("/api/questions", { cache: "no-store", headers: withFirebaseUserHeaders() }),
+        ])
+
+        const [notesPayload, recordingsPayload, questionsPayload] = await Promise.all([
+          notesResponse.json().catch(() => []),
+          recordingsResponse.json().catch(() => []),
+          questionsResponse.json().catch(() => []),
+        ])
+
+        if (!isMounted) return
+
+        setNotes(notesResponse.ok && Array.isArray(notesPayload) ? notesPayload : [])
+        setRecordings(recordingsResponse.ok && Array.isArray(recordingsPayload) ? recordingsPayload : [])
+        setQuestions(questionsResponse.ok && Array.isArray(questionsPayload) ? questionsPayload : [])
+      } catch {
+        if (!isMounted) return
+        setNotes([])
+        setRecordings([])
+        setQuestions([])
+      }
+    }
+
+    void loadData()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  const recentNotes = useMemo(() => notes.slice(0, 3), [notes])
+  const recentRecordings = useMemo(() => recordings.slice(0, 3), [recordings])
+  const recentQuestions = useMemo(() => questions.slice(0, 3), [questions])
+
+  const totalRecordingSeconds = useMemo(
+    () => recordings.reduce((acc, item) => acc + (item.durationSeconds || 0), 0),
+    [recordings]
+  )
+
   return (
     <div className="p-6 lg:p-8 space-y-6">
       {/* Header */}
@@ -38,7 +107,7 @@ export function DashboardContent() {
             </Link>
           </Button>
           <Button variant="secondary" asChild>
-            <Link href="/dashboard">
+            <Link href="/recordings/new">
               <Mic className="w-4 h-4" />
               Start Recording
             </Link>
@@ -51,20 +120,20 @@ export function DashboardContent() {
         <StatsCard
           icon={FileText}
           label="Total Notes"
-          value="24"
-          description="+3 this week"
+          value={String(notes.length)}
+          description="Saved in your workspace"
         />
         <StatsCard
           icon={Mic}
           label="Recordings"
-          value="12"
-          description="5.2 hours total"
+          value={String(recordings.length)}
+          description={`${formatDuration(totalRecordingSeconds)} total`}
         />
         <StatsCard
           icon={MessageSquare}
           label="AI Questions"
-          value="89"
-          description="+15 this week"
+          value={String(questions.length)}
+          description="Stored chat history"
         />
         <StatsCard
           icon={TrendingUp}
@@ -84,14 +153,14 @@ export function DashboardContent() {
               <CardDescription>Your latest study materials</CardDescription>
             </div>
             <Button variant="ghost" size="sm" asChild>
-              <Link href="/dashboard">View all</Link>
+              <Link href="/notes">View all</Link>
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
             {recentNotes.map((note) => (
               <Link
                 key={note.id}
-                href="/dashboard"
+                href={`/notes/${note.id}`}
                 className="flex items-start justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
               >
                 <div className="flex gap-2">
@@ -102,22 +171,17 @@ export function DashboardContent() {
                     <h3 className="font-medium text-foreground">{note.title}</h3>
                     <div className="flex items-center gap-2 mt-1">
                       <Clock className="w-3 h-3 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">{note.date}</span>
+                      <span className="text-sm text-muted-foreground">
+                        {formatDistanceToNow(new Date(note.updatedAt), { addSuffix: true })}
+                      </span>
                     </div>
                   </div>
                 </div>
-                <div className="flex gap-1">
-                  {note.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-2 py-0.5 text-xs font-medium rounded-full bg-secondary text-secondary-foreground"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
               </Link>
             ))}
+            {recentNotes.length === 0 && (
+              <p className="text-sm text-muted-foreground">No notes yet. Create your first note to populate this panel.</p>
+            )}
           </CardContent>
         </Card>
 
@@ -135,13 +199,13 @@ export function DashboardContent() {
                 </div>
                 <div>
                   <p className="font-medium text-foreground">Notes Reviewed</p>
-                  <p className="text-sm text-muted-foreground">12 of 24</p>
+                  <p className="text-sm text-muted-foreground">{notes.length} notes available</p>
                 </div>
               </div>
-              <span className="text-lg font-semibold text-foreground">50%</span>
+              <span className="text-lg font-semibold text-foreground">Live</span>
             </div>
             <div className="w-full h-2 rounded-full bg-muted">
-              <div className="h-full w-1/2 rounded-full bg-accent" />
+              <div className="h-full w-full rounded-full bg-accent" />
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -150,13 +214,13 @@ export function DashboardContent() {
                 </div>
                 <div>
                   <p className="font-medium text-foreground">Flashcards</p>
-                  <p className="text-sm text-muted-foreground">45 of 120</p>
+                  <p className="text-sm text-muted-foreground">Generated from your notes in Study mode</p>
                 </div>
               </div>
-              <span className="text-lg font-semibold text-foreground">38%</span>
+              <span className="text-lg font-semibold text-foreground">Ready</span>
             </div>
             <div className="w-full h-2 rounded-full bg-muted">
-              <div className="h-full w-[38%] rounded-full bg-primary" />
+              <div className="h-full w-full rounded-full bg-primary" />
             </div>
           </CardContent>
         </Card>
@@ -172,14 +236,14 @@ export function DashboardContent() {
               <CardDescription>Lecture and meeting recordings</CardDescription>
             </div>
             <Button variant="ghost" size="sm" asChild>
-              <Link href="/dashboard">View all</Link>
+              <Link href="/recordings">View all</Link>
             </Button>
           </CardHeader>
           <CardContent className="space-y-2">
             {recentRecordings.map((recording) => (
               <Link
                 key={recording.id}
-                href="/dashboard"
+                href={`/recordings/${recording.id}`}
                 className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
               >
                 <div className="flex items-center gap-3">
@@ -188,12 +252,19 @@ export function DashboardContent() {
                   </div>
                   <div>
                     <h3 className="font-medium text-foreground">{recording.title}</h3>
-                    <p className="text-sm text-muted-foreground">{recording.date}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {formatDistanceToNow(new Date(recording.createdAt), { addSuffix: true })}
+                    </p>
                   </div>
                 </div>
-                <span className="text-sm font-medium text-muted-foreground">{recording.duration}</span>
+                <span className="text-sm font-medium text-muted-foreground">
+                  {formatDuration(recording.durationSeconds)}
+                </span>
               </Link>
             ))}
+            {recentRecordings.length === 0 && (
+              <p className="text-sm text-muted-foreground">No recordings saved yet.</p>
+            )}
           </CardContent>
         </Card>
 
@@ -205,7 +276,7 @@ export function DashboardContent() {
               <CardDescription>Questions you&apos;ve asked</CardDescription>
             </div>
             <Button variant="ghost" size="sm" asChild>
-              <Link href="/dashboard">View all</Link>
+              <Link href="/questions">View all</Link>
             </Button>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -220,11 +291,14 @@ export function DashboardContent() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-foreground line-clamp-2">{q.question}</p>
-                    <p className="text-xs text-muted-foreground mt-1">From: {q.note}</p>
+                    <p className="text-xs text-muted-foreground mt-1">From: {q.noteTitle || "General chat"}</p>
                   </div>
                 </div>
               </div>
             ))}
+            {recentQuestions.length === 0 && (
+              <p className="text-sm text-muted-foreground">No AI questions yet. Ask AI Buddy from a note to populate this section.</p>
+            )}
           </CardContent>
         </Card>
       </div>

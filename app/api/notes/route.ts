@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { getDatabaseUrl } from '@/lib/env';
 import { getAuthHeaders } from '@/lib/server-auth';
+import { createServerNotification } from '@/lib/server-notifications';
 
 const globalForPrisma = global as unknown as { prisma?: PrismaClient };
 
@@ -120,6 +121,16 @@ export async function POST(request: Request) {
                 userId: user.id,
             }
         });
+
+        await createServerNotification(prisma, {
+            userId: user.id,
+            email: authHeaders.email,
+            recipientName: authHeaders.displayName,
+            title: 'New Note Created',
+            message: `Your note "${title}" was created successfully.`,
+            type: 'success',
+        });
+
         return Response.json(note, { status: 201 });
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
