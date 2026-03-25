@@ -52,16 +52,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
+  const loadUserSettings = useCallback(async () => {
+    try {
+      const response = await fetch("/api/users/settings", {
+        headers: withFirebaseUserHeaders(),
+        cache: "no-store",
+      })
+
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload?.settings) {
+        return
+      }
+
+      // Store settings in localStorage for immediate application
+      localStorage.setItem("noteai.settings.v1", JSON.stringify(payload.settings))
+
+      // Store profile if available
+      if (payload.profile) {
+        localStorage.setItem("noteai.profile.v1", JSON.stringify(payload.profile))
+      }
+
+      // Apply compact mode immediately
+      if (payload.settings.compactMode) {
+        document.documentElement.classList.add("compact")
+      }
+    } catch {
+      // Keep auth flow resilient if fetching settings fails
+    }
+  }, [])
+
   const syncUserToDatabase = useCallback(async () => {
     try {
       await fetch("/api/users/sync", {
         method: "POST",
         headers: withFirebaseUserHeaders(),
       })
+      // After syncing user, load their settings
+      await loadUserSettings()
     } catch {
       // Keep auth flow resilient if user sync fails transiently.
     }
-  }, [])
+  }, [loadUserSettings])
 
   useEffect(() => {
     if (!auth) {

@@ -4,6 +4,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { getOpenAIApiKey, getOpenAIChatModel } from '@/lib/env';
 import { getDatabaseUrl } from '@/lib/env';
 import { getAuthHeaders } from '@/lib/server-auth';
+import { createServerNotification } from '@/lib/server-notifications';
 
 const apiKey = getOpenAIApiKey();
 const model = getOpenAIChatModel();
@@ -197,6 +198,15 @@ export async function POST(request: Request) {
                         question: prompt,
                         answer,
                     },
+                });
+
+                await createServerNotification(prisma, {
+                    userId,
+                    email: authHeaders.email,
+                    recipientName: authHeaders.displayName,
+                    title: 'New AI Answer Saved',
+                    message: 'Your latest AI question and answer were saved to question history.',
+                    type: 'info',
                 });
             } catch {
                 // Do not fail chat when persistence is unavailable.

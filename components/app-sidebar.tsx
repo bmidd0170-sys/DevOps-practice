@@ -88,23 +88,23 @@ export function AppSidebar() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={handleLogout}
-          className={cn("mb-2 w-full", collapsed ? "justify-center" : "justify-start gap-2")}
-        >
-          <LogOut className="w-4 h-4" />
-          {!collapsed && <span>Log out</span>}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
           onClick={() => setCollapsed(!collapsed)}
-          className="w-full justify-center"
+          className="mb-2 w-full justify-center"
         >
           {collapsed ? (
             <ChevronRight className="w-4 h-4" />
           ) : (
             <ChevronLeft className="w-4 h-4" />
           )}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleLogout}
+          className={cn("w-full", collapsed ? "justify-center" : "justify-start gap-2")}
+        >
+          <LogOut className="w-4 h-4" />
+          {!collapsed && <span>Log out</span>}
         </Button>
       </div>
     </aside>

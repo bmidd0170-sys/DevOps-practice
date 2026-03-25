@@ -284,7 +284,7 @@ export function FlashcardDeck({ noteId, onBack }: FlashcardDeckProps) {
             >
               <ArrowLeft className="w-4 h-4" />
             </Button>
-            
+
             {isFlipped && (
               <>
                 <Button

@@ -270,9 +270,9 @@ export async function POST(request: Request) {
     } catch (error) {
         const status =
             typeof error === 'object' &&
-            error !== null &&
-            'status' in error &&
-            typeof (error as { status?: unknown }).status === 'number'
+                error !== null &&
+                'status' in error &&
+                typeof (error as { status?: unknown }).status === 'number'
                 ? (error as { status: number }).status
                 : 500;
 

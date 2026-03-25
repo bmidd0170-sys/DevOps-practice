@@ -179,7 +179,7 @@ export function QuizMode({ noteId, onBack }: QuizModeProps) {
 
   const handleSubmitAnswer = () => {
     if (selectedAnswer === null) return
-    
+
     const isCorrect = selectedAnswer === currentQuestion.correctAnswer
     if (isCorrect) {
       setScore(score + 1)
@@ -341,7 +341,7 @@ export function QuizMode({ noteId, onBack }: QuizModeProps) {
             <p className="text-muted-foreground mb-6">
               You scored {score} out of {quizQuestions.length} questions
             </p>
-            
+
             <div className="flex justify-center mb-8">
               <div className="relative w-32 h-32">
                 <svg className="w-full h-full transform -rotate-90">

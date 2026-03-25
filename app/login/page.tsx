@@ -14,6 +14,47 @@ import { useNotifications } from "@/components/notifications/notification-contex
 import { useAuth } from "@/components/auth/auth-context"
 import { toast } from "sonner"
 
+type AuthFlow = "signin" | "signup" | "google"
+
+function getAuthErrorMessage(error: unknown, flow: AuthFlow) {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code?: unknown }).code || "")
+      : ""
+
+  switch (code) {
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+    case "auth/invalid-login-credentials":
+      return "Invalid email or password. Please try again."
+    case "auth/too-many-requests":
+      return "Too many attempts. Try again in a few minutes."
+    case "auth/user-disabled":
+      return "This account has been disabled. Contact support for help."
+    case "auth/network-request-failed":
+      return "Network error. Check your connection and try again."
+    case "auth/operation-not-allowed":
+      return flow === "google"
+        ? "Google sign-in is not enabled for this Firebase project."
+        : "Email/password sign-in is not enabled for this Firebase project."
+    case "auth/email-already-in-use":
+      return "That email is already in use. Try signing in instead."
+    case "auth/weak-password":
+      return "Password is too weak. Use at least 6 characters."
+    case "auth/invalid-email":
+      return "Please enter a valid email address."
+    case "auth/popup-closed-by-user":
+      return "Google sign-in was canceled before completion."
+    case "auth/popup-blocked":
+      return "Popup was blocked. Allow popups and try again."
+    default:
+      if (flow === "signup") return "Could not create your account. Please try again."
+      if (flow === "google") return "Google sign-in failed. Please try again."
+      return "Sign in failed. Please check your credentials and try again."
+  }
+}
+
 export default function LoginPage() {
   const router = useRouter()
   const { user, loading, isConfigured, signInWithEmailPassword, signInWithGoogle, signUpWithEmailPassword } = useAuth()
@@ -70,8 +111,7 @@ export default function LoginPage() {
       const next = getNextPath() || (isSignUp ? "/getting-started" : "/dashboard")
       router.push(next)
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Authentication failed"
-      toast.error(message)
+      toast.error(getAuthErrorMessage(error, isSignUp ? "signup" : "signin"))
     } finally {
       setIsLoading(false)
     }
@@ -106,8 +146,7 @@ export default function LoginPage() {
       const next = getNextPath() || "/dashboard"
       router.push(next)
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Google authentication failed"
-      toast.error(message)
+      toast.error(getAuthErrorMessage(error, "google"))
     } finally {
       setIsLoading(false)
     }
