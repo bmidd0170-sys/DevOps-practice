@@ -62,6 +62,26 @@ export function getSmtpFrom(): string {
     return readEnv('SMTP_FROM') || 'NoteAI <noreply@noteai.app>';
 }
 
+export interface SmtpConfigDebug {
+    hasHost: boolean;
+    hasUser: boolean;
+    hasPass: boolean;
+    missing: Array<'SMTP_HOST' | 'SMTP_USER' | 'SMTP_PASS'>;
+}
+
+export function getSmtpConfigDebug(): SmtpConfigDebug {
+    const hasHost = Boolean(getSmtpHost());
+    const hasUser = Boolean(getSmtpUser());
+    const hasPass = Boolean(getSmtpPass());
+    const missing: SmtpConfigDebug['missing'] = [];
+
+    if (!hasHost) missing.push('SMTP_HOST');
+    if (!hasUser) missing.push('SMTP_USER');
+    if (!hasPass) missing.push('SMTP_PASS');
+
+    return { hasHost, hasUser, hasPass, missing };
+}
+
 export function isSmtpConfigured(): boolean {
     return Boolean(getSmtpHost() && getSmtpUser() && getSmtpPass());
 }

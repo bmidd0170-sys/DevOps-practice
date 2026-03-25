@@ -40,7 +40,7 @@ Optional model overrides:
 - `OPENAI_CHAT_MODEL=gpt-4.1-mini`
 - `OPENAI_TRANSCRIBE_MODEL=gpt-4o-mini-transcribe`
 
-Required for email notifications:
+Optional for email delivery (in-app notifications still work without SMTP):
 - `SMTP_HOST=smtp.gmail.com`
 - `SMTP_PORT=587`
 - `SMTP_USER=you@example.com`
@@ -76,7 +76,13 @@ Database values are loaded from files in `secrets/`:
 AI values for Docker are also loaded from files in `secrets/`:
 - `secrets/openai-api-key.txt`
 
-Firebase client values can be set in your shell or compose environment as `NEXT_PUBLIC_FIREBASE_*` variables.
+Firebase client values must be available as `NEXT_PUBLIC_FIREBASE_*` environment variables when building the web image:
+- `NEXT_PUBLIC_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+- `NEXT_PUBLIC_FIREBASE_APP_ID`
+
+`docker-compose.yml` now passes these values as build args and runtime env vars. Set them in a valid `.env` file (key=value lines only) or your shell before running `docker compose up --build`.
 
 These files are ignored by git.
 

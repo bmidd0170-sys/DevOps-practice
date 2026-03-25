@@ -84,20 +84,23 @@ export function SettingsContent() {
     message: string
   ) => {
     if (!enabled) return
+
+    const authEmail = user?.email?.trim() || ""
+    const authName = user?.displayName?.trim() || ""
     const profileRaw = localStorage.getItem("noteai.profile.v1")
-    let profileEmail = email
-    let profileName = name
+    let profileEmail = authEmail || email
+    let profileName = authName || name
     try {
       if (profileRaw) {
         const p = JSON.parse(profileRaw) as { name?: string; email?: string }
-        if (p.email) profileEmail = p.email
-        if (p.name) profileName = p.name
+        if (!authEmail && p.email) profileEmail = p.email
+        if (!authName && p.name) profileName = p.name
       }
     } catch {
       // fall back to state values
     }
 
-    await sendNotification({
+    return sendNotification({
       email: profileEmail,
       recipientName: profileName,
       subject: title,
@@ -390,13 +393,20 @@ export function SettingsContent() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() =>
-                notifyToggle(
+              onClick={async () => {
+                const result = await notifyToggle(
                   true,
                   "Test Notification",
                   "This is a test notification from NoteAI. Your in-app and email notifications are working correctly."
                 )
-              }
+
+                if (result?.emailSent) {
+                  toast.success(`Test email sent to ${user?.email || email}`)
+                  return
+                }
+
+                toast.info(result?.reason || "In-app notification sent. Configure SMTP to enable email delivery.")
+              }}
             >
               <Bell className="w-4 h-4 mr-2" />
               Send Test Notification

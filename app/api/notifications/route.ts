@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 import {
   getDatabaseUrl,
+  getSmtpConfigDebug,
   getSmtpHost,
   getSmtpPort,
   getSmtpUser,
@@ -14,7 +15,7 @@ import {
 import { getAuthHeaders } from "@/lib/server-auth"
 
 export interface NotificationPayload {
-  email: string
+  email?: string
   recipientName?: string
   subject: string
   title: string
@@ -75,10 +76,22 @@ function getNotificationDelegate() {
           emailSent: boolean
         }>
       >
+      deleteMany: (args: {
+        where: { userId: string }
+      }) => Promise<{ count: number }>
     }
   } | null)?.notification
 
   return delegate ?? null
+}
+
+async function getUserIdFromAuthHeaders(authHeaders: { uid: string }) {
+  const user = await prisma?.user.findUnique({
+    where: { firebaseUid: authHeaders.uid },
+    select: { id: true },
+  })
+
+  return user?.id ?? null
 }
 
 function buildTransporter() {
@@ -151,18 +164,18 @@ export async function POST(req: NextRequest) {
   }
 
   const { email, recipientName, subject, title, message, type = "info" } = body
+  const normalizedEmail =
+    typeof email === "string" && email.trim()
+      ? email.trim()
+      : typeof authHeaders.email === "string" && authHeaders.email.trim()
+        ? authHeaders.email.trim()
+        : ""
 
-  if (!email || !subject || !title || !message) {
+  if (!subject || !title || !message) {
     return NextResponse.json(
-      { error: "Missing required fields: email, subject, title, message" },
+      { error: "Missing required fields: subject, title, message" },
       { status: 400 }
     )
-  }
-
-  // Basic email format validation (security: reject obviously bad inputs)
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!emailRegex.test(email)) {
-    return NextResponse.json({ error: "Invalid email address" }, { status: 400 })
   }
 
   const transporter = buildTransporter()
@@ -170,17 +183,31 @@ export async function POST(req: NextRequest) {
   let reason: string | undefined
 
   if (!transporter) {
+    const smtpDebug = getSmtpConfigDebug()
     console.warn(
-      "[notifications] SMTP not configured — skipping email. Set SMTP_HOST, SMTP_USER, and SMTP_PASS to enable."
+      `[notifications] SMTP not configured — skipping email. Missing: ${smtpDebug.missing.join(", ") || "none"}. Set SMTP_HOST, SMTP_USER, and SMTP_PASS to enable.`
     )
     reason = "SMTP not configured"
   }
 
-  if (transporter) {
+  if (transporter && !normalizedEmail) {
+    reason = "Recipient email missing"
+    console.warn(
+      "[notifications] SMTP configured but recipient email is missing — skipping email send."
+    )
+  }
+
+  if (transporter && normalizedEmail) {
+    // Basic email format validation (security: reject obviously bad inputs)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(normalizedEmail)) {
+      return NextResponse.json({ error: "Invalid email address" }, { status: 400 })
+    }
+
     try {
       await transporter.sendMail({
         from: getSmtpFrom(),
-        to: email,
+        to: normalizedEmail,
         subject,
         text: `Hi ${recipientName || "there"},\n\n${title}\n\n${message}\n\n—NoteAI`,
         html: buildHtmlEmail(recipientName || "", title, message),
@@ -212,23 +239,23 @@ export async function POST(req: NextRequest) {
 
       const user = existingUser
         ? await prisma?.user.update({
-            where: { id: existingUser.id },
-            data: {
-              ...(!existingUser.email && authHeaders.email ? { email: authHeaders.email } : {}),
-              ...(!existingUser.displayName && authHeaders.displayName
-                ? { displayName: authHeaders.displayName }
-                : {}),
-            },
-            select: { id: true },
-          })
+          where: { id: existingUser.id },
+          data: {
+            ...(!existingUser.email && authHeaders.email ? { email: authHeaders.email } : {}),
+            ...(!existingUser.displayName && authHeaders.displayName
+              ? { displayName: authHeaders.displayName }
+              : {}),
+          },
+          select: { id: true },
+        })
         : await prisma?.user.create({
-            data: {
-              firebaseUid: authHeaders.uid,
-              email: authHeaders.email,
-              displayName: authHeaders.displayName,
-            },
-            select: { id: true },
-          })
+          data: {
+            firebaseUid: authHeaders.uid,
+            email: authHeaders.email,
+            displayName: authHeaders.displayName,
+          },
+          select: { id: true },
+        })
 
       if (!user) {
         return NextResponse.json({ error: "Database not configured" }, { status: 500 })
@@ -237,7 +264,7 @@ export async function POST(req: NextRequest) {
       const created = await notificationDelegate.create({
         data: {
           userId: user.id,
-          email,
+          email: normalizedEmail,
           recipientName,
           subject,
           title,
@@ -288,17 +315,13 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const user = await prisma?.user.findUnique({
-      where: { firebaseUid: authHeaders.uid },
-      select: { id: true },
-    })
-
-    if (!user) {
+    const userId = await getUserIdFromAuthHeaders(authHeaders)
+    if (!userId) {
       return NextResponse.json([])
     }
 
     const notifications = await notificationDelegate.findMany({
-      where: { userId: user.id },
+      where: { userId },
       orderBy: { createdAt: "desc" },
       take: 50,
     })
@@ -320,5 +343,36 @@ export async function GET(req: NextRequest) {
       error instanceof Error ? error.message : String(error)
     )
     return NextResponse.json([])
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const authHeaders = getAuthHeaders(req)
+  if (!authHeaders) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 })
+  }
+
+  const notificationDelegate = getNotificationDelegate()
+  if (!notificationDelegate) {
+    return NextResponse.json({ deletedCount: 0 })
+  }
+
+  try {
+    const userId = await getUserIdFromAuthHeaders(authHeaders)
+    if (!userId) {
+      return NextResponse.json({ deletedCount: 0 })
+    }
+
+    const result = await notificationDelegate.deleteMany({
+      where: { userId },
+    })
+
+    return NextResponse.json({ deletedCount: result.count })
+  } catch (error) {
+    console.error(
+      "[notifications] Failed to delete notifications:",
+      error instanceof Error ? error.message : String(error)
+    )
+    return NextResponse.json({ error: "Failed to delete notifications" }, { status: 500 })
   }
 }

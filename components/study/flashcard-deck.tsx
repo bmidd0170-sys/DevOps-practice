@@ -1,53 +1,161 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { ArrowLeft, ArrowRight, RotateCcw, Check, X, Shuffle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { withFirebaseUserHeaders } from "@/lib/client-auth"
 
 interface FlashcardDeckProps {
   noteId: string
   onBack: () => void
 }
 
-const flashcards = [
-  {
-    id: 1,
-    front: "What is Machine Learning?",
-    back: "A subset of artificial intelligence that focuses on building systems that learn from and make decisions based on data, rather than being explicitly programmed.",
-  },
-  {
-    id: 2,
-    front: "What is Supervised Learning?",
-    back: "A type of machine learning where the algorithm learns from labeled training data, making predictions based on example input-output pairs.",
-  },
-  {
-    id: 3,
-    front: "What is Unsupervised Learning?",
-    back: "A type of machine learning that deals with unlabeled data, where the system tries to learn patterns and structure without explicit instructions.",
-  },
-  {
-    id: 4,
-    front: "What is Overfitting?",
-    back: "When a model learns the training data too well, including noise and outliers, causing it to perform poorly on new, unseen data.",
-  },
-  {
-    id: 5,
-    front: "What is Feature Engineering?",
-    back: "The process of using domain knowledge to select and transform variables (features) that make machine learning algorithms work better.",
-  },
-]
+interface ApiNote {
+  id: number
+  title: string
+  content: string
+}
+
+interface StudyApiFlashcard {
+  front: string
+  back: string
+}
+
+interface StudyApiResponse {
+  noteTitle?: string
+  flashcards?: StudyApiFlashcard[]
+}
+
+interface Flashcard {
+  id: number
+  front: string
+  back: string
+}
+
+function buildFlashcards(content: string): Flashcard[] {
+  const sentences = content
+    .replace(/\s+/g, " ")
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 40)
+    .slice(0, 12)
+
+  if (sentences.length === 0) {
+    return [{
+      id: 1,
+      front: "What is this note about?",
+      back: "Add more note content to generate study cards.",
+    }]
+  }
+
+  return sentences.map((sentence, index) => ({
+    id: index + 1,
+    front: `Key point ${index + 1}`,
+    back: sentence,
+  }))
+}
 
 export function FlashcardDeck({ noteId, onBack }: FlashcardDeckProps) {
+  const [noteTitle, setNoteTitle] = useState("Selected Note")
+  const [flashcards, setFlashcards] = useState<Flashcard[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isFlipped, setIsFlipped] = useState(false)
   const [knownCards, setKnownCards] = useState<number[]>([])
   const [unknownCards, setUnknownCards] = useState<number[]>([])
 
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadFallbackNote() {
+      try {
+        const response = await fetch(`/api/notes/${noteId}`, {
+          cache: "no-store",
+          headers: withFirebaseUserHeaders(),
+        })
+        const payload = await response.json().catch(() => null) as ApiNote | null
+
+        if (!isMounted) return
+
+        if (response.ok && payload?.content) {
+          setNoteTitle(payload.title || "Selected Note")
+          setFlashcards(buildFlashcards(payload.content))
+          return
+        }
+      } catch {
+        if (!isMounted) return
+      }
+
+      if (!isMounted) return
+      setNoteTitle("Selected Note")
+      setFlashcards(buildFlashcards(""))
+    }
+
+    async function loadNote() {
+      setIsLoading(true)
+      setErrorMessage(null)
+      try {
+        const headers = withFirebaseUserHeaders({
+          "content-type": "application/json",
+        })
+
+        const response = await fetch("/api/ai/study", {
+          method: "POST",
+          cache: "no-store",
+          headers,
+          body: JSON.stringify({ noteId }),
+        })
+        const payload = await response.json().catch(() => null) as StudyApiResponse | { error?: string } | null
+
+        if (!isMounted) return
+
+        if (response.ok && payload && Array.isArray(payload.flashcards) && payload.flashcards.length > 0) {
+          setNoteTitle(payload.noteTitle || "Selected Note")
+          setFlashcards(
+            payload.flashcards.map((card, index) => ({
+              id: index + 1,
+              front: card.front,
+              back: card.back,
+            }))
+          )
+        } else {
+          const error = payload && "error" in payload && typeof payload.error === "string"
+            ? payload.error
+            : "AI flashcards unavailable. Using a basic study set."
+          setErrorMessage(error)
+          await loadFallbackNote()
+        }
+      } catch {
+        if (!isMounted) return
+        setErrorMessage("AI flashcards unavailable. Using a basic study set.")
+        await loadFallbackNote()
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
+          setCurrentIndex(0)
+          setIsFlipped(false)
+          setKnownCards([])
+          setUnknownCards([])
+        }
+      }
+    }
+
+    void loadNote()
+
+    return () => {
+      isMounted = false
+    }
+  }, [noteId])
+
   const currentCard = flashcards[currentIndex]
-  const progress = ((currentIndex + 1) / flashcards.length) * 100
+  const progress = useMemo(() => {
+    if (flashcards.length === 0) return 0
+    return ((currentIndex + 1) / flashcards.length) * 100
+  }, [currentIndex, flashcards.length])
 
   const handleNext = () => {
     if (currentIndex < flashcards.length - 1) {
@@ -80,7 +188,7 @@ export function FlashcardDeck({ noteId, onBack }: FlashcardDeckProps) {
     setUnknownCards([])
   }
 
-  const isComplete = currentIndex === flashcards.length - 1 && (knownCards.includes(currentCard.id) || unknownCards.includes(currentCard.id))
+  const isComplete = flashcards.length > 0 && currentIndex === flashcards.length - 1 && (knownCards.includes(currentCard.id) || unknownCards.includes(currentCard.id))
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
@@ -92,7 +200,7 @@ export function FlashcardDeck({ noteId, onBack }: FlashcardDeckProps) {
           </Button>
           <div>
             <h1 className="text-xl font-bold text-foreground">Flashcards</h1>
-            <p className="text-sm text-muted-foreground">Introduction to Machine Learning</p>
+            <p className="text-sm text-muted-foreground">{noteTitle}</p>
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={handleShuffle}>
@@ -115,8 +223,16 @@ export function FlashcardDeck({ noteId, onBack }: FlashcardDeckProps) {
         <Progress value={progress} className="h-2" />
       </div>
 
+      {isLoading && (
+        <p className="text-sm text-muted-foreground">Generating AI flashcards from your saved note...</p>
+      )}
+
+      {!isLoading && errorMessage && (
+        <p className="text-sm text-muted-foreground">{errorMessage}</p>
+      )}
+
       {/* Flashcard */}
-      {!isComplete ? (
+      {!isLoading && !isComplete ? (
         <div className="flex flex-col items-center gap-6">
           <div
             onClick={() => setIsFlipped(!isFlipped)}
@@ -168,7 +284,7 @@ export function FlashcardDeck({ noteId, onBack }: FlashcardDeckProps) {
             >
               <ArrowLeft className="w-4 h-4" />
             </Button>
-            
+
             {isFlipped && (
               <>
                 <Button
@@ -206,7 +322,7 @@ export function FlashcardDeck({ noteId, onBack }: FlashcardDeckProps) {
             Flip Card
           </Button>
         </div>
-      ) : (
+      ) : !isLoading ? (
         /* Completion Screen */
         <Card className="max-w-xl mx-auto">
           <CardContent className="pt-8 pb-8 text-center">
@@ -237,7 +353,7 @@ export function FlashcardDeck({ noteId, onBack }: FlashcardDeckProps) {
             </div>
           </CardContent>
         </Card>
-      )}
+      ) : null}
     </div>
   )
 }

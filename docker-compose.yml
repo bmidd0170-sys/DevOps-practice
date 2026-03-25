@@ -1,9 +1,19 @@
 services:
   web:
-    build: .
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY}
+        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}
+        NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID}
+        NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID}
     ports:
       - "80:3000"
     environment:
+      - NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY}
+      - NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}
+      - NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID}
+      - NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID}
       - DATABASE_URL_FILE=/run/secrets/db-url.txt
       - OPENAI_API_KEY_FILE=/run/secrets/openai-api-key.txt
       - OPENAI_CHAT_MODEL=gpt-4o-mini
@@ -12,7 +22,7 @@ services:
       - SMTP_HOST_FILE=/run/secrets/smtp-host.txt
       - SMTP_PORT=587
       - SMTP_USER_FILE=/run/secrets/smtp-email.txt
-      - SMTP_FROM=NoteAI <bmidd0170@launchpadphilly.org>
+      - SMTP_FROM_FILE=/run/secrets/smtp-from.txt
       - SMTP_PASS_FILE=/run/secrets/smtp-password.txt
     volumes:
       - ./secrets:/run/secrets:ro

@@ -4,6 +4,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { getOpenAIApiKey, getOpenAIChatModel } from '@/lib/env';
 import { getDatabaseUrl } from '@/lib/env';
 import { getAuthHeaders } from '@/lib/server-auth';
+import { createServerNotification } from '@/lib/server-notifications';
 
 const apiKey = getOpenAIApiKey();
 const model = getOpenAIChatModel();
@@ -48,6 +49,23 @@ function getNoteDelegate() {
             }) => Promise<{ title: string; content: string } | null>;
         };
     } | null)?.note;
+
+    return delegate ?? null;
+}
+
+function getAiQuestionDelegate() {
+    const delegate = (prisma as PrismaClient & {
+        aiQuestion?: {
+            create: (args: {
+                data: {
+                    userId: string;
+                    noteId?: number;
+                    question: string;
+                    answer: string;
+                };
+            }) => Promise<{ id: number }>;
+        };
+    } | null)?.aiQuestion;
 
     return delegate ?? null;
 }
@@ -166,8 +184,37 @@ export async function POST(request: Request) {
             temperature: 0.4,
         });
 
+        const answer = response.choices[0]?.message?.content?.trim() || 'I could not generate a response.';
+
+        const aiQuestionDelegate = getAiQuestionDelegate();
+        const parsedNoteId = noteId && noteId !== 'new' ? parseNoteId(noteId) : null;
+
+        if (aiQuestionDelegate && userId) {
+            try {
+                await aiQuestionDelegate.create({
+                    data: {
+                        userId,
+                        ...(parsedNoteId ? { noteId: parsedNoteId } : {}),
+                        question: prompt,
+                        answer,
+                    },
+                });
+
+                await createServerNotification(prisma, {
+                    userId,
+                    email: authHeaders.email,
+                    recipientName: authHeaders.displayName,
+                    title: 'New AI Answer Saved',
+                    message: 'Your latest AI question and answer were saved to question history.',
+                    type: 'info',
+                });
+            } catch {
+                // Do not fail chat when persistence is unavailable.
+            }
+        }
+
         return Response.json({
-            answer: response.choices[0]?.message?.content?.trim() || 'I could not generate a response.',
+            answer,
             model,
         });
     } catch (error) {

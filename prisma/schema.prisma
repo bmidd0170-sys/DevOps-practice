@@ -12,6 +12,7 @@ model Note {
   content String
   userId String
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aiQuestions AiQuestion[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -44,6 +45,40 @@ model User {
   settings    UserSettings?
   notes       Note[]
   notifications Notification[]
+  recordings  Recording[]
+  aiQuestions AiQuestion[]
+}
+
+model Recording {
+  id              Int      @id @default(autoincrement())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title           String
+  transcript      String
+  audioData       Bytes?
+  audioMimeType   String?
+  audioFileName   String?
+  audioSizeBytes  Int?
+  durationSeconds Int      @default(0)
+  status          String   @default("transcribed")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId, createdAt])
+}
+
+model AiQuestion {
+  id        Int      @id @default(autoincrement())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  noteId    Int?
+  note      Note?    @relation(fields: [noteId], references: [id], onDelete: SetNull)
+  question  String
+  answer    String
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([noteId])
 }
 
 model UserSettings {

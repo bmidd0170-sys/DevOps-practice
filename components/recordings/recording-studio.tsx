@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Mic, Square, Pause, Play, Save, ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
+import { withFirebaseUserHeaders } from "@/lib/client-auth"
 
 interface TranscriptItem {
   time: string
@@ -19,6 +20,11 @@ interface TranscriptionResponse {
   error?: string
   details?: string
   hint?: string
+}
+
+interface RecordingSaveResponse {
+  error?: string
+  details?: string
 }
 
 interface SpeechRecognitionAlternativeItem {
@@ -63,6 +69,7 @@ declare global {
 }
 
 export function RecordingStudio() {
+  const TRANSCRIBE_DISABLED_KEY = "recording-ai-transcribe-disabled"
   const [isRecording, setIsRecording] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
   const [isTranscribing, setIsTranscribing] = useState(false)
@@ -70,6 +77,8 @@ export function RecordingStudio() {
   const [title, setTitle] = useState("")
   const [transcript, setTranscript] = useState<TranscriptItem[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [isAiTranscribeDisabled, setIsAiTranscribeDisabled] = useState(false)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -98,8 +107,30 @@ export function RecordingStudio() {
   }, [])
 
   useEffect(() => {
+    if (typeof window === "undefined") return
+    const storedValue = window.sessionStorage.getItem(TRANSCRIBE_DISABLED_KEY)
+    if (storedValue === "1") {
+      setIsAiTranscribeDisabled(true)
+    }
+  }, [])
+
+  useEffect(() => {
     recordingTimeRef.current = recordingTime
   }, [recordingTime])
+
+  const disableAiTranscription = useCallback(() => {
+    setIsAiTranscribeDisabled(true)
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(TRANSCRIBE_DISABLED_KEY, "1")
+    }
+  }, [TRANSCRIBE_DISABLED_KEY])
+
+  const clearAiTranscriptionDisable = useCallback(() => {
+    setIsAiTranscribeDisabled(false)
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem(TRANSCRIBE_DISABLED_KEY)
+    }
+  }, [TRANSCRIBE_DISABLED_KEY])
 
   const startSpeechRecognition = useCallback(() => {
     if (typeof window === "undefined") return
@@ -179,9 +210,61 @@ export function RecordingStudio() {
     }
   }, [stopSpeechRecognition])
 
-  const transcribeAudio = useCallback(async (audioBlob: Blob) => {
+  const persistRecording = useCallback(async (params: {
+    transcriptText: string
+    durationSeconds: number
+    audioBlob: Blob
+  }) => {
+    const resolvedTitle = title.trim() || `Recording ${new Date().toLocaleString()}`
+
+    const file = new File([params.audioBlob], `recording-${Date.now()}.webm`, {
+      type: params.audioBlob.type || "audio/webm",
+    })
+    const formData = new FormData()
+    formData.append("title", resolvedTitle)
+    formData.append("transcript", params.transcriptText)
+    formData.append("durationSeconds", String(params.durationSeconds))
+    formData.append("status", "transcribed")
+    formData.append("audio", file)
+
+    const response = await fetch("/api/recordings", {
+      method: "POST",
+      headers: withFirebaseUserHeaders(),
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as RecordingSaveResponse | null
+      throw new Error(payload?.error || "Failed to save recording")
+    }
+
+    setSaveMessage("Recording saved to your library.")
+  }, [title])
+
+  const transcribeAudio = useCallback(async (audioBlob: Blob, durationSeconds: number) => {
     setIsTranscribing(true)
     setError(null)
+    setSaveMessage(null)
+
+    const hasBrowserTranscript = localTranscriptRef.current.length > 0
+
+    if (isAiTranscribeDisabled && hasBrowserTranscript) {
+      try {
+        setTranscript(localTranscriptRef.current)
+        const transcriptText = localTranscriptRef.current.map((segment) => segment.text).join("\n")
+        await persistRecording({ transcriptText, durationSeconds, audioBlob })
+        setError("Saved recording using browser live transcript (AI transcription disabled).")
+      } catch (saveError) {
+        setError(
+          saveError instanceof Error
+            ? saveError.message
+            : "Recording could not be saved."
+        )
+      } finally {
+        setIsTranscribing(false)
+      }
+      return
+    }
 
     try {
       const file = new File([audioBlob], `recording-${Date.now()}.webm`, {
@@ -197,9 +280,16 @@ export function RecordingStudio() {
 
       const data = await response.json() as TranscriptionResponse
       if (!response.ok) {
+        if (response.status === 403) {
+          disableAiTranscription()
+        }
         const errorParts = [data.error, data.details, data.hint]
           .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
         throw new Error(errorParts.join(". ") || "Transcription failed")
+      }
+
+      if (isAiTranscribeDisabled) {
+        clearAiTranscriptionDisable()
       }
 
       const mappedSegments = (data.segments || [])
@@ -211,19 +301,34 @@ export function RecordingStudio() {
 
       if (mappedSegments.length > 0) {
         setTranscript(mappedSegments)
+        const transcriptText = mappedSegments.map((segment) => segment.text).join("\n")
+        await persistRecording({ transcriptText, durationSeconds, audioBlob })
       } else if (data.text) {
         setTranscript([{ time: "00:00", text: data.text }])
+        await persistRecording({ transcriptText: data.text, durationSeconds, audioBlob })
       } else if (localTranscriptRef.current.length > 0) {
         setTranscript(localTranscriptRef.current)
+        const transcriptText = localTranscriptRef.current.map((segment) => segment.text).join("\n")
+        await persistRecording({ transcriptText, durationSeconds, audioBlob })
       } else {
         setTranscript([])
       }
     } catch (transcriptionError) {
       if (localTranscriptRef.current.length > 0) {
         setTranscript(localTranscriptRef.current)
-        setError(
-          "AI transcription is unavailable for this API key. Using browser speech transcript instead."
-        )
+        try {
+          const transcriptText = localTranscriptRef.current.map((segment) => segment.text).join("\n")
+          await persistRecording({ transcriptText, durationSeconds, audioBlob })
+          setError(
+            "AI transcription is unavailable for this API key. Saved browser speech transcript instead."
+          )
+        } catch (saveError) {
+          setError(
+            saveError instanceof Error
+              ? saveError.message
+              : "AI transcription failed and recording could not be saved."
+          )
+        }
         return
       }
 
@@ -235,7 +340,7 @@ export function RecordingStudio() {
     } finally {
       setIsTranscribing(false)
     }
-  }, [formatTime])
+  }, [clearAiTranscriptionDisable, disableAiTranscription, formatTime, isAiTranscribeDisabled, persistRecording])
 
   const handleStartRecording = async () => {
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
@@ -244,6 +349,7 @@ export function RecordingStudio() {
     }
 
     setError(null)
+    setSaveMessage(null)
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -275,7 +381,7 @@ export function RecordingStudio() {
         stopSpeechRecognition()
         mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
         mediaStreamRef.current = null
-        void transcribeAudio(audioBlob)
+        void transcribeAudio(audioBlob, recordingTimeRef.current)
       }
 
       mediaRecorder.start(250)
@@ -393,6 +499,12 @@ export function RecordingStudio() {
             {error && (
               <p className="text-sm text-destructive mt-2 text-center max-w-xs">
                 {error}
+              </p>
+            )}
+
+            {saveMessage && (
+              <p className="text-sm text-accent mt-2 text-center max-w-xs">
+                {saveMessage}
               </p>
             )}
 

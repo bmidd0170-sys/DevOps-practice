@@ -17,6 +17,11 @@ jobs:
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASS: ${{ secrets.SMTP_PASS }}
+      SMTP_FROM: ${{ secrets.SMTP_FROM }}
 
     steps:
       - name: Checkout
@@ -85,6 +90,11 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_FIREBASE_API_KEY=${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+            NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+            NEXT_PUBLIC_FIREBASE_PROJECT_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+            NEXT_PUBLIC_FIREBASE_APP_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
 
   provision-ec2:
     name: Provision EC2 Instance
@@ -287,11 +297,11 @@ jobs:
           {
             echo "DATABASE_URL=${{ secrets.DATABASE_URL }}"
             echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
-            echo "SMTP_HOST=<bmidd0170@launchpadphilly.org>"
-            echo "SMTP_PORT=587"
-            echo "SMTP_USER=<bmidd0170@launchpadphilly.org>"
+            echo "SMTP_HOST=${{ secrets.SMTP_HOST }}"
+            echo "SMTP_PORT=${{ secrets.SMTP_PORT || '587' }}"
+            echo "SMTP_USER=${{ secrets.SMTP_USER }}"
             echo "SMTP_PASS=${{ secrets.SMTP_PASS }}"
-            echo "SMTP_FROM=<bmidd0170@launchpadphilly.org>"
+            echo "SMTP_FROM=${{ secrets.SMTP_FROM || secrets.SMTP_USER }}"
           } >> "$GITHUB_ENV"
 
       - name: Deploy on EC2 over SSH
@@ -373,6 +383,9 @@ jobs:
             EOF
             cat > secrets/smtp-password.txt <<EOF
             $SMTP_PASS
+            EOF
+            cat > secrets/smtp-from.txt <<EOF
+            $SMTP_FROM
             EOF
 
             echo "$GHCR_TOKEN" | sudo docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin

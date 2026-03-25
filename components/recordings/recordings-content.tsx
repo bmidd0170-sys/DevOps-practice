@@ -1,50 +1,86 @@
 "use client"
 
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { RecordingCard } from "@/components/recordings/recording-card"
 import { Mic, Plus } from "lucide-react"
 import Link from "next/link"
+import { format } from "date-fns"
+import { withFirebaseUserHeaders } from "@/lib/client-auth"
 
-const recordings = [
-  {
-    id: "1",
-    title: "Calculus Lecture 12 - Integration",
-    duration: "45:23",
-    date: "Today, 2:30 PM",
-    status: "transcribed" as const,
-  },
-  {
-    id: "2",
-    title: "Physics Lab Discussion",
-    duration: "32:10",
-    date: "Yesterday, 10:00 AM",
-    status: "transcribed" as const,
-  },
-  {
-    id: "3",
-    title: "Chemistry Study Group",
-    duration: "1:12:45",
-    date: "Mar 7, 3:00 PM",
-    status: "transcribed" as const,
-  },
-  {
-    id: "4",
-    title: "History Lecture - WWI Origins",
-    duration: "52:30",
-    date: "Mar 6, 9:00 AM",
-    status: "transcribed" as const,
-  },
-  {
-    id: "5",
-    title: "Economics Review Session",
-    duration: "38:15",
-    date: "Mar 5, 4:00 PM",
-    status: "processing" as const,
-  },
-]
+interface ApiRecording {
+  id: number
+  title: string
+  durationSeconds: number
+  createdAt: string
+  status: "recording" | "processing" | "transcribed"
+}
+
+function formatDuration(seconds: number): string {
+  const safeSeconds = Number.isFinite(seconds) ? Math.max(0, Math.round(seconds)) : 0
+  const hours = Math.floor(safeSeconds / 3600)
+  const mins = Math.floor((safeSeconds % 3600) / 60)
+  const secs = safeSeconds % 60
+
+  if (hours > 0) {
+    return `${hours}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+  }
+
+  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+}
 
 export function RecordingsContent() {
+  const [recordings, setRecordings] = useState<ApiRecording[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadRecordings() {
+      try {
+        const response = await fetch("/api/recordings", {
+          cache: "no-store",
+          headers: withFirebaseUserHeaders(),
+        })
+        const payload = await response.json().catch(() => null)
+
+        if (!response.ok) {
+          throw new Error(payload?.error ?? "Failed to load recordings")
+        }
+
+        if (!isMounted) return
+        setRecordings(Array.isArray(payload) ? payload : [])
+        setLoadError(null)
+      } catch (error) {
+        if (!isMounted) return
+        setRecordings([])
+        setLoadError(error instanceof Error ? error.message : "Failed to load recordings")
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    void loadRecordings()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  const totalDurationSeconds = useMemo(
+    () => recordings.reduce((acc, recording) => acc + (recording.durationSeconds || 0), 0),
+    [recordings]
+  )
+
+  const notesGenerated = useMemo(
+    () => recordings.filter((recording) => recording.status === "transcribed").length,
+    [recordings]
+  )
+
   return (
     <div className="p-6 lg:p-8 space-y-6">
       {/* Header */}
@@ -71,7 +107,7 @@ export function RecordingsContent() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Total Recordings</p>
-                <p className="text-2xl font-bold text-foreground">12</p>
+                <p className="text-2xl font-bold text-foreground">{recordings.length}</p>
               </div>
             </div>
           </CardContent>
@@ -84,7 +120,7 @@ export function RecordingsContent() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Total Duration</p>
-                <p className="text-2xl font-bold text-foreground">5.2 hrs</p>
+                <p className="text-2xl font-bold text-foreground">{formatDuration(totalDurationSeconds)}</p>
               </div>
             </div>
           </CardContent>
@@ -97,12 +133,15 @@ export function RecordingsContent() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Notes Generated</p>
-                <p className="text-2xl font-bold text-foreground">8</p>
+                <p className="text-2xl font-bold text-foreground">{notesGenerated}</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {isLoading && <p className="text-sm text-muted-foreground">Loading recordings...</p>}
+      {loadError && <p className="text-sm text-destructive">{loadError}</p>}
 
       {/* Recordings List */}
       <Card>
@@ -112,8 +151,20 @@ export function RecordingsContent() {
         </CardHeader>
         <CardContent className="space-y-3">
           {recordings.map((recording) => (
-            <RecordingCard key={recording.id} recording={recording} />
+            <RecordingCard
+              key={recording.id}
+              recording={{
+                id: String(recording.id),
+                title: recording.title,
+                duration: formatDuration(recording.durationSeconds),
+                date: format(new Date(recording.createdAt), "MMM d, h:mm a"),
+                status: recording.status,
+              }}
+            />
           ))}
+          {!isLoading && recordings.length === 0 && (
+            <p className="text-sm text-muted-foreground">No recordings yet. Start one to populate this list.</p>
+          )}
         </CardContent>
       </Card>
     </div>

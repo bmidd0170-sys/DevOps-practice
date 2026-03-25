@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { NotificationProvider } from "@/components/notifications/notification-context"
 import { AuthProvider } from "@/components/auth/auth-context"
+import { SettingsApplier } from "@/components/settings-applier"
 
 const SETTINGS_STORAGE_KEY = "noteai.settings.v1"
 
@@ -29,8 +30,10 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       <AuthProvider>
         <NotificationProvider>
-          {children}
-          <Toaster richColors position="top-right" />
+          <SettingsApplier>
+            {children}
+            <Toaster richColors position="top-right" />
+          </SettingsApplier>
         </NotificationProvider>
       </AuthProvider>
     </ThemeProvider>

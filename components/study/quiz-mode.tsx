@@ -1,85 +1,176 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { ArrowLeft, Check, X, Trophy, RotateCcw } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { withFirebaseUserHeaders } from "@/lib/client-auth"
 
 interface QuizModeProps {
   noteId: string
   onBack: () => void
 }
 
-const quizQuestions = [
-  {
-    id: 1,
-    question: "What is the main difference between supervised and unsupervised learning?",
-    options: [
-      "Supervised learning uses more data",
-      "Supervised learning uses labeled data, unsupervised does not",
-      "Unsupervised learning is faster",
-      "There is no difference",
-    ],
-    correctAnswer: 1,
-  },
-  {
-    id: 2,
-    question: "What happens when a model is overfitted?",
-    options: [
-      "It performs better on all data",
-      "It performs well on training data but poorly on new data",
-      "It uses less memory",
-      "It trains faster",
-    ],
-    correctAnswer: 1,
-  },
-  {
-    id: 3,
-    question: "Which of the following is NOT a type of machine learning?",
-    options: [
-      "Supervised Learning",
-      "Unsupervised Learning",
-      "Reinforcement Learning",
-      "Procedural Learning",
-    ],
-    correctAnswer: 3,
-  },
-  {
-    id: 4,
-    question: "What is feature engineering?",
-    options: [
-      "Building hardware for ML",
-      "Selecting and transforming variables to improve ML algorithms",
-      "Creating new ML algorithms",
-      "Testing ML models",
-    ],
-    correctAnswer: 1,
-  },
-  {
-    id: 5,
-    question: "In reinforcement learning, how does an agent learn?",
-    options: [
-      "By studying textbooks",
-      "By receiving labeled examples",
-      "By performing actions and receiving rewards or penalties",
-      "By copying human behavior exactly",
-    ],
-    correctAnswer: 2,
-  },
-]
+interface ApiNote {
+  id: number
+  title: string
+  content: string
+}
+
+interface StudyApiQuizQuestion {
+  question: string
+  options: string[]
+  correctAnswer: number
+}
+
+interface StudyApiResponse {
+  noteTitle?: string
+  quiz?: StudyApiQuizQuestion[]
+}
+
+interface QuizQuestion {
+  id: number
+  question: string
+  options: string[]
+  correctAnswer: number
+}
+
+function buildQuizQuestions(content: string): QuizQuestion[] {
+  const sentences = content
+    .replace(/\s+/g, " ")
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 30)
+    .slice(0, 8)
+
+  if (sentences.length < 2) {
+    return [{
+      id: 1,
+      question: "Add more content to this note to generate a quiz.",
+      options: ["Got it"],
+      correctAnswer: 0,
+    }]
+  }
+
+  return sentences.slice(0, 5).map((sentence, index) => {
+    const distractors = sentences
+      .filter((_, sentenceIndex) => sentenceIndex !== index)
+      .slice(0, 3)
+
+    const options = [sentence, ...distractors]
+    return {
+      id: index + 1,
+      question: `Which statement appears in your note?`,
+      options,
+      correctAnswer: 0,
+    }
+  })
+}
 
 export function QuizMode({ noteId, onBack }: QuizModeProps) {
+  const [noteTitle, setNoteTitle] = useState("Selected Note")
+  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
   const [isAnswered, setIsAnswered] = useState(false)
   const [score, setScore] = useState(0)
   const [answers, setAnswers] = useState<{ questionId: number; correct: boolean }[]>([])
 
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadFallbackNote() {
+      try {
+        const response = await fetch(`/api/notes/${noteId}`, {
+          cache: "no-store",
+          headers: withFirebaseUserHeaders(),
+        })
+        const payload = await response.json().catch(() => null) as ApiNote | null
+
+        if (!isMounted) return
+
+        if (response.ok && payload?.content) {
+          setNoteTitle(payload.title || "Selected Note")
+          setQuizQuestions(buildQuizQuestions(payload.content))
+          return
+        }
+      } catch {
+        if (!isMounted) return
+      }
+
+      if (!isMounted) return
+      setNoteTitle("Selected Note")
+      setQuizQuestions(buildQuizQuestions(""))
+    }
+
+    async function loadNote() {
+      setIsLoading(true)
+      setErrorMessage(null)
+      try {
+        const headers = withFirebaseUserHeaders({
+          "content-type": "application/json",
+        })
+
+        const response = await fetch("/api/ai/study", {
+          method: "POST",
+          cache: "no-store",
+          headers,
+          body: JSON.stringify({ noteId }),
+        })
+        const payload = await response.json().catch(() => null) as StudyApiResponse | { error?: string } | null
+
+        if (!isMounted) return
+
+        if (response.ok && payload && Array.isArray(payload.quiz) && payload.quiz.length > 0) {
+          setNoteTitle(payload.noteTitle || "Selected Note")
+          setQuizQuestions(
+            payload.quiz.map((question, index) => ({
+              id: index + 1,
+              question: question.question,
+              options: question.options,
+              correctAnswer: question.correctAnswer,
+            }))
+          )
+        } else {
+          const error = payload && "error" in payload && typeof payload.error === "string"
+            ? payload.error
+            : "AI quiz unavailable. Using a basic quiz."
+          setErrorMessage(error)
+          await loadFallbackNote()
+        }
+      } catch {
+        if (!isMounted) return
+        setErrorMessage("AI quiz unavailable. Using a basic quiz.")
+        await loadFallbackNote()
+      } finally {
+        if (isMounted) {
+          setCurrentIndex(0)
+          setSelectedAnswer(null)
+          setIsAnswered(false)
+          setScore(0)
+          setAnswers([])
+          setIsLoading(false)
+        }
+      }
+    }
+
+    void loadNote()
+
+    return () => {
+      isMounted = false
+    }
+  }, [noteId])
+
   const currentQuestion = quizQuestions[currentIndex]
-  const progress = ((currentIndex + 1) / quizQuestions.length) * 100
-  const isComplete = currentIndex === quizQuestions.length - 1 && isAnswered
+  const progress = useMemo(() => {
+    if (quizQuestions.length === 0) return 0
+    return ((currentIndex + 1) / quizQuestions.length) * 100
+  }, [currentIndex, quizQuestions.length])
+  const isComplete = quizQuestions.length > 0 && currentIndex === quizQuestions.length - 1 && isAnswered
 
   const handleSelectAnswer = (index: number) => {
     if (isAnswered) return
@@ -88,7 +179,7 @@ export function QuizMode({ noteId, onBack }: QuizModeProps) {
 
   const handleSubmitAnswer = () => {
     if (selectedAnswer === null) return
-    
+
     const isCorrect = selectedAnswer === currentQuestion.correctAnswer
     if (isCorrect) {
       setScore(score + 1)
@@ -114,6 +205,10 @@ export function QuizMode({ noteId, onBack }: QuizModeProps) {
   }
 
   const percentage = Math.round((score / quizQuestions.length) * 100)
+  const safePercentage = Number.isFinite(percentage) ? Math.max(0, Math.min(100, percentage)) : 0
+  const ringRadius = 56
+  const ringCircumference = 2 * Math.PI * ringRadius
+  const ringDashOffset = ringCircumference * (1 - safePercentage / 100)
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
@@ -125,7 +220,7 @@ export function QuizMode({ noteId, onBack }: QuizModeProps) {
           </Button>
           <div>
             <h1 className="text-xl font-bold text-foreground">Quiz</h1>
-            <p className="text-sm text-muted-foreground">Introduction to Machine Learning</p>
+            <p className="text-sm text-muted-foreground">{noteTitle}</p>
           </div>
         </div>
         {!isComplete && (
@@ -136,7 +231,7 @@ export function QuizMode({ noteId, onBack }: QuizModeProps) {
       </div>
 
       {/* Progress */}
-      {!isComplete && (
+      {!isLoading && !isComplete && (
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">
@@ -147,8 +242,16 @@ export function QuizMode({ noteId, onBack }: QuizModeProps) {
         </div>
       )}
 
+      {isLoading && (
+        <p className="text-sm text-muted-foreground">Generating AI quiz from your saved note...</p>
+      )}
+
+      {!isLoading && errorMessage && (
+        <p className="text-sm text-muted-foreground">{errorMessage}</p>
+      )}
+
       {/* Quiz Content */}
-      {!isComplete ? (
+      {!isLoading && !isComplete ? (
         <Card className="max-w-2xl mx-auto">
           <CardHeader>
             <CardTitle className="text-lg">{currentQuestion.question}</CardTitle>
@@ -215,7 +318,7 @@ export function QuizMode({ noteId, onBack }: QuizModeProps) {
             </div>
           </CardContent>
         </Card>
-      ) : (
+      ) : !isLoading ? (
         /* Results Screen */
         <Card className="max-w-xl mx-auto">
           <CardContent className="pt-8 pb-8 text-center">
@@ -238,32 +341,33 @@ export function QuizMode({ noteId, onBack }: QuizModeProps) {
             <p className="text-muted-foreground mb-6">
               You scored {score} out of {quizQuestions.length} questions
             </p>
-            
+
             <div className="flex justify-center mb-8">
               <div className="relative w-32 h-32">
                 <svg className="w-full h-full transform -rotate-90">
                   <circle
                     cx="64"
                     cy="64"
-                    r="56"
+                    r={ringRadius}
                     className="fill-none stroke-muted"
                     strokeWidth="12"
                   />
                   <circle
                     cx="64"
                     cy="64"
-                    r="56"
+                    r={ringRadius}
                     className={cn(
                       "fill-none",
                       percentage >= 80 ? "stroke-accent" : percentage >= 60 ? "stroke-chart-3" : "stroke-destructive"
                     )}
                     strokeWidth="12"
                     strokeLinecap="round"
-                    strokeDasharray={`${(percentage / 100) * 352} 352`}
+                    strokeDasharray={`${ringCircumference} ${ringCircumference}`}
+                    strokeDashoffset={ringDashOffset}
                   />
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-3xl font-bold text-foreground">{percentage}%</span>
+                  <span className="text-3xl font-bold text-foreground">{safePercentage}%</span>
                 </div>
               </div>
             </div>
@@ -296,7 +400,7 @@ export function QuizMode({ noteId, onBack }: QuizModeProps) {
             </div>
           </CardContent>
         </Card>
-      )}
+      ) : null}
     </div>
   )
 }
